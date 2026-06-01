@@ -65,6 +65,7 @@ app:
   features:
     kafka-consumers-enabled: ${RECOMMENDATION_KAFKA_CONSUMERS_ENABLED:false}
     trends-api-enabled: ${RECOMMENDATION_TRENDS_API_ENABLED:true}
+    personal-podcasts-api-enabled: ${RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED:true}
     refresh-job-enabled: ${RECOMMENDATION_REFRESH_JOB_ENABLED:false}
     global-job-enabled: ${RECOMMENDATION_GLOBAL_JOB_ENABLED:false}
     cache-cleanup-enabled: ${RECOMMENDATION_CACHE_CLEANUP_ENABLED:false}

@@ -21,8 +21,10 @@ class RecommendationFeatureFlagsTest {
     private ApplicationContext applicationContext;
 
     @Test
-    void runtimeFeaturesAreDisabledByDefault() {
+    void featureFlagsUseSafeDefaults() {
         assertThat(featureFlags.kafkaConsumersEnabled()).isFalse();
+        assertThat(featureFlags.trendsApiEnabled()).isTrue();
+        assertThat(featureFlags.personalPodcastsApiEnabled()).isTrue();
         assertThat(featureFlags.refreshJobEnabled()).isFalse();
         assertThat(featureFlags.globalJobEnabled()).isFalse();
         assertThat(featureFlags.cacheCleanupEnabled()).isFalse();

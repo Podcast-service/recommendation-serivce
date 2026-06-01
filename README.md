@@ -23,10 +23,11 @@
 Поднять пустую локальную PostgreSQL БД:
 
 ```powershell
+Copy-Item .env.example .env
 docker compose up -d
 ```
 
-`docker compose` также собирает и запускает приложение из локального `Dockerfile`. Kafka consumers остаются выключены по умолчанию, поэтому Kafka не требуется для локального старта.
+`docker compose` читает настройки из локального `.env`, собирает и запускает приложение из `Dockerfile`. Kafka consumers остаются выключены по умолчанию, поэтому Kafka не требуется для локального старта.
 
 Если дефолтные настройки не подходят, можно переопределить переменные окружения:
 
@@ -63,6 +64,7 @@ http://localhost:8083/swagger
 
 - `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`
 - `RECOMMENDATION_TRENDS_API_ENABLED=true`
+- `RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED=true`
 - `RECOMMENDATION_REFRESH_JOB_ENABLED=false`
 - `RECOMMENDATION_GLOBAL_JOB_ENABLED=false`
 - `RECOMMENDATION_CACHE_CLEANUP_ENABLED=false`
@@ -70,6 +72,8 @@ http://localhost:8083/swagger
 Текущее безопасное решение: Kafka consumer для content events объявлен, но не создаётся при дефолтном `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`. Consumers должны обрабатывать только версионированные events и быть идемпотентными через `processed_events`.
 
 Read-only Trends API управляется `RECOMMENDATION_TRENDS_API_ENABLED`. По умолчанию он включён, чтобы сервис сразу удовлетворял contract readiness для чтения daily stats; при необходимости endpoint можно выключить без изменения схемы БД.
+
+Personal Podcasts API управляется `RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED`. По умолчанию он включён как read-only endpoint поверх собственных read models Recommendation Service; при необходимости endpoint можно выключить без изменения схемы БД и без влияния на Kafka consumers.
 
 ## Kafka Event Contracts
 
@@ -126,6 +130,37 @@ REST API трендов:
 - `month`: текущая UTC date и предыдущие 29 dates
 
 Podcast trends возвращают только snapshots со статусом `PUBLISHED`. `podcast.published.v1` и `podcast.updated.v1` обновляют podcast snapshot в статус `PUBLISHED`; `podcast.deleted.v1` оставляет tombstone со статусом `DELETED`.
+
+## Personal Podcasts API
+
+REST API персональных рекомендаций подкастов:
+
+- `GET /recommendation/v1/podcasts?userId={userId}&limit=20&categoryId=&excludeSeen=true`
+
+`limit` по умолчанию равен `20`, максимум `100`. `categoryId` ограничивает кандидатов одной категорией. При `excludeSeen=true` сервис не возвращает подкасты, по которым уже есть interaction для пользователя. Disliked podcasts не возвращаются независимо от `excludeSeen`.
+
+Сервис не использует cache, ML-модель, HTTP calls в Podcast Core и прямое чтение БД Podcast Core. Кандидаты берутся только из собственных read models:
+
+- top categories пользователя;
+- top authors пользователя;
+- popular podcasts за последние 7 UTC dates;
+- fresh published podcasts за последние 30 дней;
+- fallback на global popular при пустом профиле.
+
+`recommendation_score` нормализуется в диапазон `0..100`, где `100` — лучший локальный кандидат в текущем response-контексте. MVP-формула:
+
+```text
+0.35 * category_match_score
++ 0.25 * author_match_score
++ 0.20 * popularity_score
++ 0.10 * freshness_score
++ 0.05 * quality_score
++ 0.05 * diversity_score
+- already_seen_penalty
+- disliked_penalty
+```
+
+Reason codes: `TOP_CATEGORY`, `TOP_AUTHOR`, `POPULAR_NOW`, `NEW_RELEASE`, `FALLBACK_POPULAR`.
 
 ## Схема БД
 

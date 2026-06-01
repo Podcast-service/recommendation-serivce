@@ -1,24 +1,26 @@
 services:
   app:
     build:
-      context: .
-    container_name: recommendation-service
+      context: ${RECOMMENDATION_BUILD_CONTEXT:-.}
+    container_name: ${RECOMMENDATION_CONTAINER_NAME:-recommendation-service}
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      RECOMMENDATION_DB_URL: jdbc:postgresql://postgres:5432/recommendation_db
+      RECOMMENDATION_DB_URL: ${RECOMMENDATION_DB_URL:-jdbc:postgresql://postgres:5432/recommendation_db}
       RECOMMENDATION_DB_USER: ${RECOMMENDATION_DB_USER:-recommendation_user}
       RECOMMENDATION_DB_PASSWORD: ${RECOMMENDATION_DB_PASSWORD:-recommendation_pass}
       RECOMMENDATION_KAFKA_BOOTSTRAP_SERVERS: ${RECOMMENDATION_KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}
       RECOMMENDATION_KAFKA_CONSUMERS_ENABLED: ${RECOMMENDATION_KAFKA_CONSUMERS_ENABLED:-false}
       RECOMMENDATION_TRENDS_API_ENABLED: ${RECOMMENDATION_TRENDS_API_ENABLED:-true}
+      RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED: ${RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED:-true}
+      RECOMMENDATION_SWAGGER_ENABLED: ${RECOMMENDATION_SWAGGER_ENABLED:-false}
     ports:
       - "${RECOMMENDATION_SERVER_PORT:-8083}:8083"
 
   postgres:
-    image: postgres:17-alpine
-    container_name: recommendation-postgres
+    image: ${RECOMMENDATION_POSTGRES_IMAGE:-postgres:17-alpine}
+    container_name: ${RECOMMENDATION_POSTGRES_CONTAINER_NAME:-recommendation-postgres}
     environment:
       POSTGRES_DB: ${RECOMMENDATION_DB_NAME:-recommendation_db}
       POSTGRES_USER: ${RECOMMENDATION_DB_USER:-recommendation_user}
