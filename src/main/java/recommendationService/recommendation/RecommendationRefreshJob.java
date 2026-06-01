@@ -1,0 +1,65 @@
+package recommendationService.recommendation;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
+import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import recommendationService.config.RecommendationCacheProperties;
+
+@Component
+@ConditionalOnProperty(prefix = "app.features", name = "refresh-job-enabled", havingValue = "true")
+public class RecommendationRefreshJob {
+
+    private static final Logger log = LoggerFactory.getLogger(RecommendationRefreshJob.class);
+
+    private final PodcastRecommendationCacheRepository cacheRepository;
+    private final PodcastRecommendationService recommendationService;
+    private final RecommendationCacheProperties cacheProperties;
+    private final MeterRegistry meterRegistry;
+
+    public RecommendationRefreshJob(
+            PodcastRecommendationCacheRepository cacheRepository,
+            PodcastRecommendationService recommendationService,
+            RecommendationCacheProperties cacheProperties,
+            MeterRegistry meterRegistry
+    ) {
+        this.cacheRepository = cacheRepository;
+        this.recommendationService = recommendationService;
+        this.cacheProperties = cacheProperties;
+        this.meterRegistry = meterRegistry;
+    }
+
+    @Scheduled(fixedDelayString = "${app.jobs.recommendation-refresh-fixed-delay-ms:1200000}")
+    public void refreshPersonalRecommendations() {
+        Instant startedAt = Instant.now();
+        log.info("recommendation_refresh_job_started");
+        int processedUsers = 0;
+        int processedItems = 0;
+        int errors = 0;
+        for (String userId : cacheRepository.findUserIdsForRefresh(cacheProperties.refreshUserLimit())) {
+            try {
+                processedItems += recommendationService
+                        .refreshPersonalRecommendations(userId, PodcastRecommendationScoringService.DEFAULT_LIMIT, null, true)
+                        .size();
+                processedUsers++;
+            } catch (RuntimeException exception) {
+                errors++;
+                log.warn("recommendation_refresh_job_user_failed userId={}", userId, exception);
+            }
+        }
+        Duration duration = Duration.between(startedAt, Instant.now());
+        Timer.builder("recommendation.jobs.duration").tag("job", "personal-refresh").register(meterRegistry).record(duration);
+        log.info(
+                "recommendation_refresh_job_finished durationMs={} processedUsers={} processedItems={} errors={}",
+                duration.toMillis(),
+                processedUsers,
+                processedItems,
+                errors
+        );
+    }
+}

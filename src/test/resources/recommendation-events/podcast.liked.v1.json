@@ -1,0 +1,18 @@
+{
+  "eventId": "01000000-0000-0000-0000-000000000003",
+  "eventType": "podcast.liked.v1",
+  "eventVersion": 1,
+  "producer": "podcast-core",
+  "occurredAt": "2026-06-01T10:15:30Z",
+  "correlationId": null,
+  "causationId": null,
+  "userId": "50000000-0000-0000-0000-000000000001",
+  "payload": {
+    "podcastId": "10000000-0000-0000-0000-000000000001",
+    "userId": "50000000-0000-0000-0000-000000000001",
+    "authorId": "20000000-0000-0000-0000-000000000001",
+    "categoryId": "30000000-0000-0000-0000-000000000001",
+    "occurredAt": "2026-06-01T10:15:30Z",
+    "likedAt": "2026-06-01T10:15:30Z"
+  }
+}
