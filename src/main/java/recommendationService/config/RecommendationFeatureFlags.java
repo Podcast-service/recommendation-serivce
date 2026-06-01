@@ -7,6 +7,7 @@ public record RecommendationFeatureFlags(
         boolean kafkaConsumersEnabled,
         boolean trendsApiEnabled,
         boolean personalPodcastsApiEnabled,
+        boolean recommendationBlocksApiEnabled,
         boolean refreshJobEnabled,
         boolean globalJobEnabled,
         boolean cacheCleanupEnabled

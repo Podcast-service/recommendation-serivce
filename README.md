@@ -2,7 +2,7 @@
 
 `Recommendation Service` — самостоятельный Spring Boot микросервис для будущих персональных рекомендаций подкастов, рекомендаций плейлистов, похожих подкастов и авторов, трендов, рейтингов, user interest profiles, агрегатов активности и recommendation cache.
 
-Текущий этап намеренно не содержит бизнес-логики рекомендаций и Kafka listeners. Сервис не читает БД Podcast Core напрямую и должен стартовать независимо от Podcast Core и Kafka.
+Сервис содержит read-only API рекомендаций и трендов, cache-слой и выключаемые Kafka/jobs компоненты. Он не читает БД Podcast Core напрямую и должен стартовать независимо от Podcast Core и Kafka при дефолтных feature flags.
 
 ## Стек
 
@@ -65,6 +65,7 @@ http://localhost:8083/swagger
 - `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`
 - `RECOMMENDATION_TRENDS_API_ENABLED=true`
 - `RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED=true`
+- `RECOMMENDATION_BLOCKS_API_ENABLED=true`
 - `RECOMMENDATION_REFRESH_JOB_ENABLED=false`
 - `RECOMMENDATION_GLOBAL_JOB_ENABLED=false`
 - `RECOMMENDATION_CACHE_CLEANUP_ENABLED=false`
@@ -74,6 +75,16 @@ http://localhost:8083/swagger
 Read-only Trends API управляется `RECOMMENDATION_TRENDS_API_ENABLED`. По умолчанию он включён, чтобы сервис сразу удовлетворял contract readiness для чтения daily stats; при необходимости endpoint можно выключить без изменения схемы БД.
 
 Personal Podcasts API управляется `RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED`. По умолчанию он включён как read-only endpoint поверх собственных read models Recommendation Service; при необходимости endpoint можно выключить без изменения схемы БД и без влияния на Kafka consumers.
+
+Recommendation Blocks API управляется `RECOMMENDATION_BLOCKS_API_ENABLED`. Он добавляет read-only feed, playlist recommendations и similar endpoints; при необходимости блоки можно выключить отдельно от podcast recommendations.
+
+Recommendation cache и periodic jobs выключены по умолчанию:
+
+- `RECOMMENDATION_REFRESH_JOB_ENABLED=false`
+- `RECOMMENDATION_GLOBAL_JOB_ENABLED=false`
+- `RECOMMENDATION_CACHE_CLEANUP_ENABLED=false`
+
+Jobs используют интервалы из `.env`: personal refresh `RECOMMENDATION_REFRESH_JOB_FIXED_DELAY_MS`, global refresh `RECOMMENDATION_GLOBAL_JOB_FIXED_DELAY_MS`, cleanup `RECOMMENDATION_CACHE_CLEANUP_FIXED_DELAY_MS`.
 
 ## Kafka Event Contracts
 
@@ -161,6 +172,54 @@ REST API персональных рекомендаций подкастов:
 ```
 
 Reason codes: `TOP_CATEGORY`, `TOP_AUTHOR`, `POPULAR_NOW`, `NEW_RELEASE`, `FALLBACK_POPULAR`.
+
+API сначала читает `recommendation_cache`. При cache miss выполняется on-demand scoring и результат записывается обратно в cache. Если профиль пользователя пустой, API дополнительно может использовать `global_recommendation_cache`; при его отсутствии работает тот же on-demand fallback на global popular.
+
+Cache entries хранят `generated_at`, `expires_at`, `item_rank`, `score`, `reason_code`, `reason_text`, `item_id`; `payload` содержит JSON с basic metadata. `item_rank` используется вместо SQL-колонки `rank`, чтобы не конфликтовать с зарезервированными словами и сохранить portable SQL для PostgreSQL/H2 tests.
+
+Cache metrics:
+
+- `recommendation.cache.hit`
+- `recommendation.cache.miss`
+- `recommendation.cache.refresh.count`
+- `recommendation.cache.cleanup.count`
+
+## Recommendation Blocks API
+
+Дополнительные read-only блоки:
+
+- `GET /recommendation/v1/feed?userId={userId}&limit=20`
+- `GET /recommendation/v1/playlists?userId={userId}&limit=20`
+- `GET /recommendation/v1/podcasts/{podcastId}/similar?limit=20`
+- `GET /recommendation/v1/authors/{authorId}/similar?limit=20`
+
+`limit` по умолчанию равен `20`, максимум `100`. Все scores нормализуются в диапазон `0..100`.
+
+Feed объединяет `PODCAST` и `PLAYLIST` элементы и сортирует их по unified score. Для podcast части используется уже существующий cache-first personal podcast service.
+
+Playlist scoring использует:
+
+- совпадение категорий пользователя с опубликованными подкастами внутри playlist;
+- совпадение авторов пользователя с опубликованными подкастами внутри playlist;
+- популярность playlist за последние 7 UTC dates;
+- качество подкастов внутри playlist по реакциям;
+- freshness по `playlist_catalog_snapshot.updated_at`.
+
+Similar podcasts formula:
+
+```text
+0.40 * same_category
++ 0.25 * same_author
++ 0.20 * tags_overlap
++ 0.10 * similar_duration
++ 0.05 * popularity_score
+```
+
+Для `tags_overlap` и `similar_duration` добавлены nullable поля `podcast_catalog_snapshot.tags` и `podcast_catalog_snapshot.duration_seconds`. Это безопасное backward-compatible расширение: старые snapshots без этих полей продолжают участвовать в рекомендациях, просто получают `0` за соответствующие компоненты.
+
+Similar authors использует похожесть по категориям опубликованных подкастов, shared audience из `user_author_interest`, если данные есть, и fallback на авторов из тех же категорий с высоким trend score.
+
+Recommendation Blocks API не читает БД Podcast Core, не вызывает Podcast Core по HTTP, не добавляет ML-модель и не меняет Kafka contracts.
 
 ## Схема БД
 

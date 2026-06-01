@@ -19,7 +19,7 @@ class PodcastRecommendationServiceTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-06-02T10:15:30Z"), ZoneOffset.UTC);
 
     private final PodcastRecommendationQueryRepository repository = Mockito.mock(PodcastRecommendationQueryRepository.class);
-    private final PodcastRecommendationService service = new PodcastRecommendationService(repository, CLOCK);
+    private final PodcastRecommendationScoringService service = new PodcastRecommendationScoringService(repository, CLOCK);
 
     @Test
     void userWithCategoryInterestGetsRelevantPodcasts() {
@@ -40,7 +40,7 @@ class PodcastRecommendationServiceTest {
                 candidate("podcast-other", "author-3", "category-2", "20", false, false, 0)
         ));
 
-        List<PodcastRecommendationResponse> response = service.recommendPodcasts("user-1", 20, null, true);
+        List<PodcastRecommendationResponse> response = service.calculatePodcasts("user-1", 20, null, true);
 
         assertThat(response).isNotEmpty();
         assertThat(response.getFirst().itemId()).isEqualTo("podcast-category");
@@ -66,7 +66,7 @@ class PodcastRecommendationServiceTest {
                 candidate("podcast-other", "author-2", "category-3", "10", false, false, 0)
         ));
 
-        List<PodcastRecommendationResponse> response = service.recommendPodcasts("user-1", null, null, true);
+        List<PodcastRecommendationResponse> response = service.calculatePodcasts("user-1", null, null, true);
 
         assertThat(response.getFirst().itemId()).isEqualTo("podcast-author");
         assertThat(response.getFirst().reasonCode()).isEqualTo("TOP_AUTHOR");
@@ -90,7 +90,7 @@ class PodcastRecommendationServiceTest {
                 candidate("podcast-allowed", "author-2", "category-2", "10", false, false, 0)
         ));
 
-        List<PodcastRecommendationResponse> response = service.recommendPodcasts("user-1", null, null, true);
+        List<PodcastRecommendationResponse> response = service.calculatePodcasts("user-1", null, null, true);
 
         assertThat(response).extracting(PodcastRecommendationResponse::itemId)
                 .containsExactly("podcast-allowed");
@@ -114,7 +114,7 @@ class PodcastRecommendationServiceTest {
                 candidate("podcast-new", "author-2", "category-2", "10", false, false, 0)
         ));
 
-        List<PodcastRecommendationResponse> response = service.recommendPodcasts("user-1", null, null, true);
+        List<PodcastRecommendationResponse> response = service.calculatePodcasts("user-1", null, null, true);
 
         assertThat(response).extracting(PodcastRecommendationResponse::itemId)
                 .containsExactly("podcast-new");
@@ -135,7 +135,7 @@ class PodcastRecommendationServiceTest {
                 500
         )).thenReturn(List.of(candidate("podcast-popular", "author-1", "category-1", "50", false, false, 0)));
 
-        List<PodcastRecommendationResponse> response = service.recommendPodcasts("user-1", null, null, true);
+        List<PodcastRecommendationResponse> response = service.calculatePodcasts("user-1", null, null, true);
 
         assertThat(response).hasSize(1);
         assertThat(response.getFirst().reasonCode()).isEqualTo("FALLBACK_POPULAR");
@@ -156,7 +156,7 @@ class PodcastRecommendationServiceTest {
                 500
         )).thenReturn(List.of());
 
-        service.recommendPodcasts("user-1", 10, "category-1", true);
+        service.calculatePodcasts("user-1", 10, "category-1", true);
 
         verify(repository).findCandidates(
                 "user-1",
@@ -168,7 +168,7 @@ class PodcastRecommendationServiceTest {
                 Instant.parse("2026-05-03T10:15:30Z"),
                 500
         );
-        assertThatThrownBy(() -> service.recommendPodcasts("user-1", 101, null, true))
+        assertThatThrownBy(() -> service.calculatePodcasts("user-1", 101, null, true))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("limit must be between 1 and 100");
     }
