@@ -105,7 +105,7 @@ public class PodcastContentEventService {
         snapshot.setAuthorId(payload.authorId().toString());
         snapshot.setCategoryId(payload.categoryId().toString());
         snapshot.setTitle(payload.title());
-        snapshot.setStatus(CatalogSnapshotStatus.ACTIVE);
+        snapshot.setStatus(CatalogSnapshotStatus.PUBLISHED);
         snapshot.setPublishedAt(payload.publishedAt());
         snapshot.setUpdatedAt(eventTime);
         podcastRepository.save(snapshot);
@@ -117,7 +117,7 @@ public class PodcastContentEventService {
         snapshot.setAuthorId(payload.authorId().toString());
         snapshot.setCategoryId(payload.categoryId().toString());
         snapshot.setTitle(payload.title());
-        snapshot.setStatus(CatalogSnapshotStatus.ACTIVE);
+        snapshot.setStatus(CatalogSnapshotStatus.PUBLISHED);
         snapshot.setUpdatedAt(eventTime);
         podcastRepository.save(snapshot);
     }

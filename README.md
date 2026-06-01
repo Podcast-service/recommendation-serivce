@@ -26,6 +26,8 @@
 docker compose up -d
 ```
 
+`docker compose` также собирает и запускает приложение из локального `Dockerfile`. Kafka consumers остаются выключены по умолчанию, поэтому Kafka не требуется для локального старта.
+
 Если дефолтные настройки не подходят, можно переопределить переменные окружения:
 
 ```powershell
@@ -60,11 +62,14 @@ http://localhost:8083/swagger
 Все runtime-функции, которые могут менять поведение сервиса, выключены по умолчанию:
 
 - `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`
+- `RECOMMENDATION_TRENDS_API_ENABLED=true`
 - `RECOMMENDATION_REFRESH_JOB_ENABLED=false`
 - `RECOMMENDATION_GLOBAL_JOB_ENABLED=false`
 - `RECOMMENDATION_CACHE_CLEANUP_ENABLED=false`
 
 Текущее безопасное решение: Kafka consumer для content events объявлен, но не создаётся при дефолтном `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`. Consumers должны обрабатывать только версионированные events и быть идемпотентными через `processed_events`.
+
+Read-only Trends API управляется `RECOMMENDATION_TRENDS_API_ENABLED`. По умолчанию он включён, чтобы сервис сразу удовлетворял contract readiness для чтения daily stats; при необходимости endpoint можно выключить без изменения схемы БД.
 
 ## Kafka Event Contracts
 
@@ -103,6 +108,24 @@ Kafka listener для `podcast.activity.events.v1` включается тем �
 - `recommendation.events.processed`
 - `recommendation.events.duplicates`
 - `recommendation.events.failed`
+
+## Trends API
+
+REST API трендов:
+
+- `GET /recommendation/v1/trends/podcasts?period=day|week|month&categoryId=&limit=`
+- `GET /recommendation/v1/trends/authors?period=day|week|month&limit=`
+- `GET /recommendation/v1/trends/playlists?period=day|week|month&limit=`
+
+`limit` по умолчанию равен `50`, максимум `100`.
+
+Безопасное решение по периодам: агрегация идёт по UTC calendar dates из daily stats tables.
+
+- `day`: текущая UTC date
+- `week`: текущая UTC date и предыдущие 6 dates
+- `month`: текущая UTC date и предыдущие 29 dates
+
+Podcast trends возвращают только snapshots со статусом `PUBLISHED`. `podcast.published.v1` и `podcast.updated.v1` обновляют podcast snapshot в статус `PUBLISHED`; `podcast.deleted.v1` оставляет tombstone со статусом `DELETED`.
 
 ## Схема БД
 
