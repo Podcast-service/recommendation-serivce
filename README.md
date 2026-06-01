@@ -69,3 +69,7 @@ Current safe decision: Kafka infrastructure properties are present for future in
 ## Independence
 
 The service owns its database schema and never connects directly to Podcast Core database. Podcast Core must not depend on Recommendation Service availability for user actions.
+
+## Schema Decisions
+
+Architecture SQL files are not present in this repository yet. The current Flyway schema keeps the documented read-model table names, uses `timestamp with time zone` for timestamps, and stores cache payloads as `text` until recommendation payload contracts are defined in a later, feature-flagged stage.
