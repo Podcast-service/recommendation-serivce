@@ -1,10 +1,10 @@
 # Recommendation Service
 
-`Recommendation Service` is a standalone Spring Boot microservice for future podcast recommendations, playlist recommendations, similar podcasts/authors, trends, ratings, user interest profiles, activity aggregates, and recommendation cache.
+`Recommendation Service` — самостоятельный Spring Boot микросервис для будущих персональных рекомендаций подкастов, рекомендаций плейлистов, похожих подкастов и авторов, трендов, рейтингов, user interest profiles, агрегатов активности и recommendation cache.
 
-This initial stage intentionally contains no recommendation business logic and no Kafka listeners. The service does not read Podcast Core database and must start independently from Podcast Core and Kafka.
+Текущий этап намеренно не содержит бизнес-логики рекомендаций и Kafka listeners. Сервис не читает БД Podcast Core напрямую и должен стартовать независимо от Podcast Core и Kafka.
 
-## Stack
+## Стек
 
 - Java 21
 - Spring Boot
@@ -18,15 +18,15 @@ This initial stage intentionally contains no recommendation business logic and n
 - Micrometer
 - SpringDoc OpenAPI
 
-## Local Run
+## Локальный запуск
 
-Start an empty local PostgreSQL database:
+Поднять пустую локальную PostgreSQL БД:
 
 ```powershell
 docker compose up -d
 ```
 
-Or set environment variables if defaults are not suitable:
+Если дефолтные настройки не подходят, можно переопределить переменные окружения:
 
 ```powershell
 $env:RECOMMENDATION_DB_URL='jdbc:postgresql://localhost:15433/recommendation_db'
@@ -35,7 +35,7 @@ $env:RECOMMENDATION_DB_PASSWORD='recommendation_pass'
 $env:RECOMMENDATION_SERVER_PORT='8083'
 ```
 
-Run checks:
+Команды проверки:
 
 ```powershell
 .\gradlew.bat test
@@ -43,13 +43,13 @@ Run checks:
 curl http://localhost:8083/actuator/health
 ```
 
-Swagger UI is disabled by default and can be enabled for local development:
+Swagger UI по умолчанию выключен. Для локальной разработки его можно включить:
 
 ```powershell
 $env:RECOMMENDATION_SWAGGER_ENABLED='true'
 ```
 
-Then open:
+После этого UI будет доступен по адресу:
 
 ```text
 http://localhost:8083/swagger
@@ -57,19 +57,39 @@ http://localhost:8083/swagger
 
 ## Feature Flags
 
-All runtime features that can affect behavior are disabled by default:
+Все runtime-функции, которые могут менять поведение сервиса, выключены по умолчанию:
 
 - `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`
 - `RECOMMENDATION_REFRESH_JOB_ENABLED=false`
 - `RECOMMENDATION_GLOBAL_JOB_ENABLED=false`
 - `RECOMMENDATION_CACHE_CLEANUP_ENABLED=false`
 
-Current safe decision: Kafka infrastructure properties are present for future integration, but no `@KafkaListener` beans are defined in this stage. Future consumers must be versioned and idempotent through `processed_events`.
+Текущее безопасное решение: Kafka infrastructure properties присутствуют для будущей интеграции, но `@KafkaListener` beans на этом этапе не объявлены. Будущие consumers должны обрабатывать только версионированные events и быть идемпотентными через `processed_events`.
 
-## Independence
+## Kafka Event Contracts
 
-The service owns its database schema and never connects directly to Podcast Core database. Podcast Core must not depend on Recommendation Service availability for user actions.
+DTO для recommendation events совместимы с текущей реализацией Podcast Core из ветки `connect_outbox`. Поддерживаются только версионированные `eventType` формата `.v1`:
 
-## Schema Decisions
+- `podcast.published.v1`
+- `podcast.updated.v1`
+- `podcast.deleted.v1`
+- `podcast.play_finished.v1`
+- `podcast.liked.v1`
+- `podcast.disliked.v1`
+- `author.followed.v1`
+- `author.unfollowed.v1`
+- `playlist.created.v1`
+- `playlist.updated.v1`
+- `playlist.deleted.v1`
 
-Architecture SQL files are not present in this repository yet. The current Flyway schema keeps the documented read-model table names, uses `timestamp with time zone` for timestamps, and stores cache payloads as `text` until recommendation payload contracts are defined in a later, feature-flagged stage.
+`RecommendationEventMapper` читает общий `DomainEventEnvelope`, игнорирует неизвестные JSON-поля и мапит `payload` в DTO по `eventType`. Неизвестный `eventType` не считается ошибкой десериализации: mapper возвращает envelope с raw JSON payload, чтобы будущий consumer мог безопасно проигнорировать событие. Невалидный envelope или payload считаются нарушением контракта.
+
+Kafka listeners пока не включены, события не обрабатываются бизнес-логикой и не пишутся в БД.
+
+## Схема БД
+
+Если архитектурные SQL-файлы отсутствуют в репозитории, Flyway-схема сохраняет документированные имена read-model таблиц, использует `timestamp with time zone` для timestamp-полей и хранит cache payload как `text` до фиксации recommendation payload contracts на отдельном feature-flagged этапе.
+
+## Независимость
+
+Сервис владеет собственной схемой БД и никогда не подключается напрямую к БД Podcast Core. Podcast Core не должен зависеть от доступности Recommendation Service для пользовательских действий.
