@@ -39,6 +39,7 @@ class SchemaMigrationTest {
             "idx_processed_events_processed_at",
             "idx_podcast_catalog_snapshot_author_id",
             "idx_podcast_catalog_snapshot_category_id",
+            "idx_podcast_catalog_snapshot_duration_seconds",
             "idx_playlist_item_snapshot_playlist_position",
             "idx_user_category_interest_user_score",
             "idx_user_author_interest_user_score",
