@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: recommendation-postgres
+    environment:
+      POSTGRES_DB: ${RECOMMENDATION_DB_NAME:-recommendation_db}
+      POSTGRES_USER: ${RECOMMENDATION_DB_USER:-recommendation_user}
+      POSTGRES_PASSWORD: ${RECOMMENDATION_DB_PASSWORD:-recommendation_pass}
+    ports:
+      - "${RECOMMENDATION_DB_PORT:-15433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${RECOMMENDATION_DB_USER:-recommendation_user} -d ${RECOMMENDATION_DB_NAME:-recommendation_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
