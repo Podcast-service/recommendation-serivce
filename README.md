@@ -86,6 +86,18 @@ DTO для recommendation events совместимы с текущей реал
 
 Kafka listener для `podcast.content.events.v1` включается только через `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=true`. Он обрабатывает `podcast.*` и `playlist.*` content events, обновляет catalog snapshots и сохраняет `eventId` в `processed_events` в одной транзакции. Неизвестные события ack-safe игнорируются и также помечаются как processed, чтобы повторная доставка не блокировала consumer.
 
+Kafka listener для `podcast.activity.events.v1` включается тем же feature flag. Он обрабатывает `podcast.play_finished.v1`, `podcast.liked.v1`, `podcast.disliked.v1`, `author.followed.v1`, `author.unfollowed.v1`, обновляет user profiles и daily stats, а затем сохраняет `eventId` в `processed_events` в той же транзакции.
+
+Веса activity events:
+
+- `podcast.play_finished.v1`: `+2.5` category, `+2.0` author
+- `podcast.liked.v1`: `+3.0` category, `+2.5` author
+- `podcast.disliked.v1`: `-2.0` category, `-1.5` author
+- `author.followed.v1`: `+5.0` author
+- `author.unfollowed.v1`: `-4.0` author
+
+Текущая ветка Podcast Core `kafka_publisher` публикует activity payload без `categoryId`, `authorId` и `progressPercent` для podcast activity events. Recommendation Service поддерживает эти поля как optional backward-compatible расширение: если `categoryId` или `authorId` отсутствует, соответствующая часть profile/stat update пропускается с warn log, а остальная обработка события продолжается.
+
 Метрики:
 
 - `recommendation.events.processed`

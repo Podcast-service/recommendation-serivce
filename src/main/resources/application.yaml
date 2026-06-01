@@ -61,6 +61,7 @@ app:
   kafka:
     topics:
       podcast-content-events: ${RECOMMENDATION_KAFKA_TOPIC_PODCAST_CONTENT_EVENTS:podcast.content.events.v1}
+      podcast-activity-events: ${RECOMMENDATION_KAFKA_TOPIC_PODCAST_ACTIVITY_EVENTS:podcast.activity.events.v1}
   features:
     kafka-consumers-enabled: ${RECOMMENDATION_KAFKA_CONSUMERS_ENABLED:false}
     refresh-job-enabled: ${RECOMMENDATION_REFRESH_JOB_ENABLED:false}
