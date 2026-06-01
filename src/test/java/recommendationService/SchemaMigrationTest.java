@@ -47,7 +47,9 @@ class SchemaMigrationTest {
             "idx_author_daily_stats_stat_date",
             "idx_playlist_daily_stats_stat_date",
             "idx_recommendation_cache_expires_at",
-            "idx_global_recommendation_cache_expires_at"
+            "idx_recommendation_cache_user_type_rank",
+            "idx_global_recommendation_cache_expires_at",
+            "idx_global_recommendation_cache_type_rank"
     );
 
     @Autowired

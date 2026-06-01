@@ -2,7 +2,7 @@
 
 `Recommendation Service` — самостоятельный Spring Boot микросервис для будущих персональных рекомендаций подкастов, рекомендаций плейлистов, похожих подкастов и авторов, трендов, рейтингов, user interest profiles, агрегатов активности и recommendation cache.
 
-Текущий этап намеренно не содержит бизнес-логики рекомендаций и Kafka listeners. Сервис не читает БД Podcast Core напрямую и должен стартовать независимо от Podcast Core и Kafka.
+Сервис содержит read-only API рекомендаций и трендов, cache-слой и выключаемые Kafka/jobs компоненты. Он не читает БД Podcast Core напрямую и должен стартовать независимо от Podcast Core и Kafka при дефолтных feature flags.
 
 ## Стек
 
@@ -74,6 +74,14 @@ http://localhost:8083/swagger
 Read-only Trends API управляется `RECOMMENDATION_TRENDS_API_ENABLED`. По умолчанию он включён, чтобы сервис сразу удовлетворял contract readiness для чтения daily stats; при необходимости endpoint можно выключить без изменения схемы БД.
 
 Personal Podcasts API управляется `RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED`. По умолчанию он включён как read-only endpoint поверх собственных read models Recommendation Service; при необходимости endpoint можно выключить без изменения схемы БД и без влияния на Kafka consumers.
+
+Recommendation cache и periodic jobs выключены по умолчанию:
+
+- `RECOMMENDATION_REFRESH_JOB_ENABLED=false`
+- `RECOMMENDATION_GLOBAL_JOB_ENABLED=false`
+- `RECOMMENDATION_CACHE_CLEANUP_ENABLED=false`
+
+Jobs используют интервалы из `.env`: personal refresh `RECOMMENDATION_REFRESH_JOB_FIXED_DELAY_MS`, global refresh `RECOMMENDATION_GLOBAL_JOB_FIXED_DELAY_MS`, cleanup `RECOMMENDATION_CACHE_CLEANUP_FIXED_DELAY_MS`.
 
 ## Kafka Event Contracts
 
@@ -161,6 +169,17 @@ REST API персональных рекомендаций подкастов:
 ```
 
 Reason codes: `TOP_CATEGORY`, `TOP_AUTHOR`, `POPULAR_NOW`, `NEW_RELEASE`, `FALLBACK_POPULAR`.
+
+API сначала читает `recommendation_cache`. При cache miss выполняется on-demand scoring и результат записывается обратно в cache. Если профиль пользователя пустой, API дополнительно может использовать `global_recommendation_cache`; при его отсутствии работает тот же on-demand fallback на global popular.
+
+Cache entries хранят `generated_at`, `expires_at`, `item_rank`, `score`, `reason_code`, `reason_text`, `item_id`; `payload` содержит JSON с basic metadata. `item_rank` используется вместо SQL-колонки `rank`, чтобы не конфликтовать с зарезервированными словами и сохранить portable SQL для PostgreSQL/H2 tests.
+
+Cache metrics:
+
+- `recommendation.cache.hit`
+- `recommendation.cache.miss`
+- `recommendation.cache.refresh.count`
+- `recommendation.cache.cleanup.count`
 
 ## Схема БД
 
