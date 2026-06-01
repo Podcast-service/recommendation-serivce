@@ -92,7 +92,7 @@ public class AuthorDailyStatsEntity {
 
     public void incrementUnfollowed(Instant eventTime) {
         this.unfollowedCount++;
-        this.followerCount--;
+        this.followerCount = Math.max(0, this.followerCount - 1);
         this.updatedAt = eventTime;
     }
 

@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import recommendationService.events.ProcessedEventRepository;
+import recommendationService.catalog.PodcastCatalogSnapshotEntity;
+import recommendationService.catalog.PodcastCatalogSnapshotRepository;
 import recommendationService.stats.AuthorDailyStatsId;
 import recommendationService.stats.AuthorDailyStatsRepository;
 import recommendationService.stats.PodcastDailyStatsId;
@@ -49,6 +51,9 @@ class PodcastActivityEventServiceTest {
     @Autowired
     private AuthorDailyStatsRepository authorDailyStatsRepository;
 
+    @Autowired
+    private PodcastCatalogSnapshotRepository podcastCatalogSnapshotRepository;
+
     @BeforeEach
     void cleanDatabase() {
         processedEventRepository.deleteAll();
@@ -57,6 +62,7 @@ class PodcastActivityEventServiceTest {
         authorInterestRepository.deleteAll();
         podcastDailyStatsRepository.deleteAll();
         authorDailyStatsRepository.deleteAll();
+        podcastCatalogSnapshotRepository.deleteAll();
     }
 
     @Test
@@ -132,6 +138,22 @@ class PodcastActivityEventServiceTest {
         assertThat(categoryInterestRepository.findAll()).isEmpty();
         assertThat(authorInterestRepository.findAll()).isEmpty();
         assertThat(authorDailyStatsRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void missingOptionalFieldsAreEnrichedFromLocalCatalogSnapshot() {
+        PodcastCatalogSnapshotEntity snapshot = new PodcastCatalogSnapshotEntity(PODCAST_ID, java.time.Instant.parse(OCCURRED_AT));
+        snapshot.setAuthorId(AUTHOR_ID);
+        snapshot.setCategoryId(CATEGORY_ID);
+        snapshot.setTitle("Catalog title");
+        podcastCatalogSnapshotRepository.save(snapshot);
+
+        ActivityEventHandlingResult result = service.handle(podcastLiked(EVENT_ID, false));
+
+        assertThat(result).isEqualTo(ActivityEventHandlingResult.PROCESSED);
+        assertThat(categoryInterest().getInterestScore()).isEqualByComparingTo("3.0");
+        assertThat(authorInterest().getInterestScore()).isEqualByComparingTo("2.5");
+        assertThat(authorStats().getLikeCount()).isEqualTo(1);
     }
 
     private UserPodcastInteractionEntity interaction() {

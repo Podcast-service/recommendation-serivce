@@ -8,7 +8,9 @@ import java.util.UUID;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record PodcastDeletedPayload(
         @NotNull UUID podcastId,
-        @NotNull UUID authorId,
-        @NotNull Instant deletedAt
+        UUID authorId,
+        UUID categoryId,
+        @NotNull Instant deletedAt,
+        String status
 ) {
 }

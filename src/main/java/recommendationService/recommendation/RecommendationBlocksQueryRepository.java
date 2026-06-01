@@ -65,6 +65,7 @@ public class RecommendationBlocksQueryRepository {
                                  group by podcast_id
                           ) podcast_quality on podcast_quality.podcast_id = podcast.podcast_id
                          where playlist.status <> 'DELETED'
+                           and playlist.visibility = 'PUBLIC'
                          group by playlist.playlist_id, playlist.title, playlist.owner_user_id, playlist.updated_at
                         having count(podcast.podcast_id) > 0
                          order by popularity_score desc, playlist.updated_at desc, playlist.playlist_id asc
@@ -109,11 +110,48 @@ public class RecommendationBlocksQueryRepository {
     }
 
     public List<SimilarPodcastCandidate> findSimilarPodcastCandidates(
-            String podcastId,
+            SimilarPodcastSource source,
             LocalDate weekStartDate,
             LocalDate weekEndDate,
             int candidateLimit
     ) {
+        List<Object> args = new java.util.ArrayList<>();
+        args.add(Date.valueOf(weekStartDate));
+        args.add(Date.valueOf(weekEndDate));
+        args.add(source.podcastId());
+        List<String> similarityPredicates = new java.util.ArrayList<>();
+        if (source.categoryId() != null) {
+            similarityPredicates.add("podcast.category_id = ?");
+            args.add(source.categoryId());
+        }
+        if (source.authorId() != null) {
+            similarityPredicates.add("podcast.author_id = ?");
+            args.add(source.authorId());
+        }
+        if (source.durationSeconds() != null && source.durationSeconds() > 0) {
+            similarityPredicates.add("podcast.duration_seconds between ? and ?");
+            args.add(Math.max(1, (int) (source.durationSeconds() * 0.70)));
+            args.add((int) (source.durationSeconds() * 1.30));
+        }
+        List<String> sourceTags = source.tags() == null
+                ? List.of()
+                : java.util.Arrays.stream(source.tags().split(","))
+                        .map(String::trim)
+                        .filter(tag -> !tag.isBlank())
+                        .map(String::toLowerCase)
+                        .distinct()
+                        .toList();
+        if (!sourceTags.isEmpty()) {
+            similarityPredicates.add("(" + String.join(
+                    " or ",
+                    java.util.Collections.nCopies(sourceTags.size(), "lower(',' || podcast.tags || ',') like ?")
+            ) + ")");
+            sourceTags.forEach(tag -> args.add("%," + tag + ",%"));
+        }
+        if (similarityPredicates.isEmpty()) {
+            return List.of();
+        }
+        args.add(candidateLimit);
         return jdbcTemplate.query("""
                         select podcast.podcast_id,
                                podcast.title,
@@ -133,6 +171,8 @@ public class RecommendationBlocksQueryRepository {
                           ) stats on stats.podcast_id = podcast.podcast_id
                          where podcast.status = 'PUBLISHED'
                            and podcast.podcast_id <> ?
+                           and (""" + String.join(" or ", similarityPredicates) + """
+                           )
                          order by popularity_score desc, podcast.published_at desc, podcast.podcast_id asc
                          limit ?
                         """,
@@ -146,10 +186,7 @@ public class RecommendationBlocksQueryRepository {
                         rs.getTimestamp("published_at") == null ? null : rs.getTimestamp("published_at").toInstant(),
                         rs.getBigDecimal("popularity_score")
                 ),
-                Date.valueOf(weekStartDate),
-                Date.valueOf(weekEndDate),
-                podcastId,
-                candidateLimit
+                args.toArray()
         );
     }
 
@@ -160,23 +197,22 @@ public class RecommendationBlocksQueryRepository {
             int candidateLimit
     ) {
         return jdbcTemplate.query("""
-                        select author.author_id,
-                               author.display_name,
-                               count(distinct podcast.category_id) as category_score,
-                               coalesce(max(audience.shared_user_count), 0) as audience_score,
-                               coalesce(max(trend.trend_score), 0) as trend_score
-                          from author_catalog_snapshot author
-                          join podcast_catalog_snapshot podcast
-                            on podcast.author_id = author.author_id
-                           and podcast.status = 'PUBLISHED'
-                           and podcast.category_id in (
-                                select distinct source_podcast.category_id
-                                  from podcast_catalog_snapshot source_podcast
-                                 where source_podcast.author_id = ?
-                                   and source_podcast.status = 'PUBLISHED'
-                                   and source_podcast.category_id is not null
-                           )
-                          left join (
+                        with source_categories as (
+                                select distinct category_id
+                                  from podcast_catalog_snapshot
+                                 where author_id = ?
+                                   and status = 'PUBLISHED'
+                                   and category_id is not null
+                        ),
+                        categories as (
+                                select podcast.author_id,
+                                       count(distinct podcast.category_id) as category_score
+                                  from podcast_catalog_snapshot podcast
+                                  join source_categories source on source.category_id = podcast.category_id
+                                 where podcast.status = 'PUBLISHED'
+                                 group by podcast.author_id
+                        ),
+                        audience as (
                                 select candidate.author_id,
                                        count(distinct candidate.user_id) as shared_user_count
                                   from user_author_interest source
@@ -187,17 +223,42 @@ public class RecommendationBlocksQueryRepository {
                                  where source.author_id = ?
                                    and source.interest_score > 0
                                  group by candidate.author_id
-                          ) audience on audience.author_id = author.author_id
-                          left join (
+                        ),
+                        trend as (
                                 select author_id,
                                        sum(play_count + play_finished_count * 2 + like_count * 3 + followed_count * 4 - unfollowed_count * 2 - dislike_count) as trend_score
                                   from author_daily_stats
                                  where stat_date between ? and ?
                                  group by author_id
-                          ) trend on trend.author_id = author.author_id
+                        )
+                        select author.author_id,
+                               author_catalog.display_name,
+                               coalesce(categories.category_score, 0) as category_score,
+                               coalesce(audience.shared_user_count, 0) as audience_score,
+                               coalesce(trend.trend_score, 0) as trend_score
+                          from (
+                                select distinct author_id
+                                  from podcast_catalog_snapshot
+                                 where status = 'PUBLISHED'
+                                   and author_id is not null
+                          ) author
+                          left join author_catalog_snapshot author_catalog on author_catalog.author_id = author.author_id
+                          left join categories on categories.author_id = author.author_id
+                          left join audience on audience.author_id = author.author_id
+                          left join trend on trend.author_id = author.author_id
                          where author.author_id <> ?
-                           and author.status <> 'DELETED'
-                         group by author.author_id, author.display_name
+                           and (author_catalog.status is null or author_catalog.status = 'ACTIVE')
+                           and exists (
+                                select 1
+                                  from podcast_catalog_snapshot published
+                                 where published.author_id = author.author_id
+                                   and published.status = 'PUBLISHED'
+                           )
+                           and (
+                                coalesce(categories.category_score, 0) > 0
+                                or coalesce(audience.shared_user_count, 0) > 0
+                                or coalesce(trend.trend_score, 0) > 0
+                           )
                          order by category_score desc, audience_score desc, trend_score desc, author.author_id asc
                          limit ?
                         """,

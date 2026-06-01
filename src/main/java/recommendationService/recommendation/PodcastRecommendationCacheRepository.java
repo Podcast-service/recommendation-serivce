@@ -32,15 +32,22 @@ public class PodcastRecommendationCacheRepository {
             String userId,
             String requestKey,
             Instant now,
-            int limit
+            int limit,
+            boolean excludeSeen
     ) {
         return jdbcTemplate.query("""
                         select item_id, item_rank, score, reason_code, reason_text, payload
-                          from recommendation_cache
-                         where user_id = ?
+                          from recommendation_cache cache
+                          join podcast_catalog_snapshot podcast on podcast.podcast_id = cache.item_id
+                          left join user_podcast_interaction interaction
+                            on interaction.user_id = ? and interaction.podcast_id = cache.item_id
+                         where cache.user_id = ?
                            and recommendation_type = ?
                            and cache_key like ?
                            and expires_at > ?
+                           and podcast.status = 'PUBLISHED'
+                           and coalesce(interaction.disliked, false) = false
+                           and (? = false or interaction.interaction_id is null)
                          order by item_rank asc
                          limit ?
                         """,
@@ -53,20 +60,34 @@ public class PodcastRecommendationCacheRepository {
                         readMetadata(rs.getString("payload"))
                 ),
                 userId,
+                userId,
                 PERSONAL_PODCASTS,
                 requestKey + ":%",
                 Timestamp.from(now),
+                excludeSeen,
                 limit
         );
     }
 
-    public List<PodcastRecommendationResponse> findGlobalPodcasts(String requestKey, Instant now, int limit) {
+    public List<PodcastRecommendationResponse> findGlobalPodcasts(
+            String userId,
+            String requestKey,
+            Instant now,
+            int limit,
+            boolean excludeSeen
+    ) {
         return jdbcTemplate.query("""
                         select item_id, item_rank, score, reason_code, reason_text, payload
-                          from global_recommendation_cache
+                          from global_recommendation_cache cache
+                          join podcast_catalog_snapshot podcast on podcast.podcast_id = cache.item_id
+                          left join user_podcast_interaction interaction
+                            on interaction.user_id = ? and interaction.podcast_id = cache.item_id
                          where recommendation_type = ?
                            and cache_key like ?
                            and expires_at > ?
+                           and podcast.status = 'PUBLISHED'
+                           and coalesce(interaction.disliked, false) = false
+                           and (? = false or interaction.interaction_id is null)
                          order by item_rank asc
                          limit ?
                         """,
@@ -78,9 +99,11 @@ public class PodcastRecommendationCacheRepository {
                         rs.getString("reason_text"),
                         readMetadata(rs.getString("payload"))
                 ),
+                userId,
                 GLOBAL_PODCASTS,
                 requestKey + ":%",
                 Timestamp.from(now),
+                excludeSeen,
                 limit
         );
     }

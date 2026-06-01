@@ -1,5 +1,7 @@
 package recommendationService.recommendation;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -18,20 +20,24 @@ public class RecommendationRefreshJob {
     private final PodcastRecommendationCacheRepository cacheRepository;
     private final PodcastRecommendationService recommendationService;
     private final RecommendationCacheProperties cacheProperties;
+    private final MeterRegistry meterRegistry;
 
     public RecommendationRefreshJob(
             PodcastRecommendationCacheRepository cacheRepository,
             PodcastRecommendationService recommendationService,
-            RecommendationCacheProperties cacheProperties
+            RecommendationCacheProperties cacheProperties,
+            MeterRegistry meterRegistry
     ) {
         this.cacheRepository = cacheRepository;
         this.recommendationService = recommendationService;
         this.cacheProperties = cacheProperties;
+        this.meterRegistry = meterRegistry;
     }
 
     @Scheduled(fixedDelayString = "${app.jobs.recommendation-refresh-fixed-delay-ms:1200000}")
     public void refreshPersonalRecommendations() {
         Instant startedAt = Instant.now();
+        log.info("recommendation_refresh_job_started");
         int processedUsers = 0;
         int processedItems = 0;
         int errors = 0;
@@ -46,9 +52,11 @@ public class RecommendationRefreshJob {
                 log.warn("recommendation_refresh_job_user_failed userId={}", userId, exception);
             }
         }
+        Duration duration = Duration.between(startedAt, Instant.now());
+        Timer.builder("recommendation.jobs.duration").tag("job", "personal-refresh").register(meterRegistry).record(duration);
         log.info(
                 "recommendation_refresh_job_finished durationMs={} processedUsers={} processedItems={} errors={}",
-                Duration.between(startedAt, Instant.now()).toMillis(),
+                duration.toMillis(),
                 processedUsers,
                 processedItems,
                 errors

@@ -4,6 +4,13 @@
 
 Сервис содержит read-only API рекомендаций и трендов, cache-слой и выключаемые Kafka/jobs компоненты. Он не читает БД Podcast Core напрямую и должен стартовать независимо от Podcast Core и Kafka при дефолтных feature flags.
 
+Подробная документация:
+
+- [Архитектура](docs/architecture.md)
+- [Kafka events](docs/events.md)
+- [REST API](docs/api.md)
+- [Operations](docs/operations.md)
+
 ## Стек
 
 - Java 21
@@ -17,6 +24,7 @@
 - Actuator
 - Micrometer
 - SpringDoc OpenAPI
+- Spring Security
 
 ## Локальный запуск
 
@@ -63,6 +71,7 @@ http://localhost:8083/swagger
 Все runtime-функции, которые могут менять поведение сервиса, выключены по умолчанию:
 
 - `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`
+- `RECOMMENDATION_SECURITY_ENABLED=true`
 - `RECOMMENDATION_TRENDS_API_ENABLED=true`
 - `RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED=true`
 - `RECOMMENDATION_BLOCKS_API_ENABLED=true`
@@ -88,7 +97,7 @@ Jobs используют интервалы из `.env`: personal refresh `RECO
 
 ## Kafka Event Contracts
 
-DTO для recommendation events совместимы с текущей реализацией Podcast Core из ветки `connect_outbox`. Поддерживаются только версионированные `eventType` формата `.v1`:
+DTO для recommendation events совместимы с текущей outbox-реализацией Podcast Core. Поддерживаются версионированные `eventType` формата `.v1`:
 
 - `podcast.published.v1`
 - `podcast.updated.v1`
@@ -116,13 +125,26 @@ Kafka listener для `podcast.activity.events.v1` включается тем �
 - `author.followed.v1`: `+5.0` author
 - `author.unfollowed.v1`: `-4.0` author
 
-Текущая ветка Podcast Core `kafka_publisher` публикует activity payload без `categoryId`, `authorId` и `progressPercent` для podcast activity events. Recommendation Service поддерживает эти поля как optional backward-compatible расширение: если `categoryId` или `authorId` отсутствует, соответствующая часть profile/stat update пропускается с warn log, а остальная обработка события продолжается.
+Recommendation Service сохраняет backward compatibility со старыми activity payload без `categoryId`, `authorId` и `progressPercent`. При отсутствии `categoryId` или `authorId` consumer сначала делает enrichment из собственного `podcast_catalog_snapshot`; если snapshot ещё не получен, доступная часть события обрабатывается, а пропущенное enrichment логируется как warning.
 
 Метрики:
 
 - `recommendation.events.processed`
 - `recommendation.events.duplicates`
 - `recommendation.events.failed`
+- `recommendation.events.dlt`
+
+Consumers используют manual ack, insert-first идемпотентность и retry/DLT strategy. После исчерпания retry сообщения публикуются в `podcast.activity.events.v1.DLT`, `podcast.content.events.v1.DLT` или `podcast.search.events.v1.DLT`.
+
+## JWT Security
+
+Все `/recommendation/v1/**` endpoints защищены Bearer JWT по тому же контракту, что и Podcast Core: `HS256`, shared secret, issuer `auth-service`, claims `user_id`, `email`, `roles`, optional `nbf`, clock skew 30 секунд. Для совместимости можно передать тот же secret, который Core получает как `PODCAST_ACCESS_TOKEN_SECRET`, через `RECOMMENDATION_JWT_SECRET`.
+
+Публичные endpoints: `/actuator/health`, `/actuator/info`, Swagger UI и `/v3/api-docs/**`. Prometheus остаётся защищённым, пока явно не задано `RECOMMENDATION_PROMETHEUS_PUBLIC=true`.
+
+Personal endpoints сравнивают query `userId` с JWT `user_id`. Чужие рекомендации доступны только роли `ADMIN`. Для local/dev security можно явно выключить через `RECOMMENDATION_SECURITY_ENABLED=false`; production default — `true`.
+
+CORS origins задаются через `RECOMMENDATION_CORS_ALLOWED_ORIGINS`; разрешены только read-only `GET` и preflight `OPTIONS`.
 
 ## Trends API
 

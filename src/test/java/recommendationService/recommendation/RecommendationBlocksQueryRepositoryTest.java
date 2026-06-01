@@ -38,10 +38,15 @@ class RecommendationBlocksQueryRepositoryTest {
         insertPodcast("podcast-deleted", "author-source", "category-a", "DELETED", "java", 1800);
         insertPodcast("podcast-draft", "author-other", "category-a", "ACTIVE", "java", 1800);
         insertPodcast("podcast-playlist", "author-playlist", "category-b", "PUBLISHED", "music", 1200);
+        insertPodcast("podcast-unrelated", "author-unrelated", "category-unrelated", "PUBLISHED", "history", 300);
 
         jdbcTemplate.update("""
                 insert into podcast_daily_stats (podcast_id, stat_date, play_count, completion_count, like_count, dislike_count, play_finished_count, share_count, rating_count, rating_sum, created_at, updated_at)
                 values ('podcast-same', date '2026-06-02', 10, 0, 5, 0, 2, 0, 0, 0, current_timestamp, current_timestamp)
+                """);
+        jdbcTemplate.update("""
+                insert into podcast_daily_stats (podcast_id, stat_date, play_count, completion_count, like_count, dislike_count, play_finished_count, share_count, rating_count, rating_sum, created_at, updated_at)
+                values ('podcast-unrelated', date '2026-06-02', 1000, 0, 500, 0, 200, 0, 0, 0, current_timestamp, current_timestamp)
                 """);
 
         jdbcTemplate.update("""
@@ -53,12 +58,20 @@ class RecommendationBlocksQueryRepositoryTest {
                 values ('playlist-deleted', 'owner-1', 'Deleted Playlist', 'PUBLIC', 'DELETED', current_timestamp, current_timestamp)
                 """);
         jdbcTemplate.update("""
+                insert into playlist_catalog_snapshot (playlist_id, owner_user_id, title, visibility, status, created_at, updated_at)
+                values ('playlist-private', 'owner-1', 'Private Playlist', 'PRIVATE', 'ACTIVE', current_timestamp, current_timestamp)
+                """);
+        jdbcTemplate.update("""
                 insert into playlist_item_snapshot (playlist_id, podcast_id, item_position, created_at, updated_at)
                 values ('playlist-good', 'podcast-playlist', 1, current_timestamp, current_timestamp)
                 """);
         jdbcTemplate.update("""
                 insert into playlist_item_snapshot (playlist_id, podcast_id, item_position, created_at, updated_at)
                 values ('playlist-deleted', 'podcast-playlist', 1, current_timestamp, current_timestamp)
+                """);
+        jdbcTemplate.update("""
+                insert into playlist_item_snapshot (playlist_id, podcast_id, item_position, created_at, updated_at)
+                values ('playlist-private', 'podcast-playlist', 1, current_timestamp, current_timestamp)
                 """);
         jdbcTemplate.update("""
                 insert into user_category_interest (user_id, category_id, interest_score, signal_count, created_at, updated_at)
@@ -77,18 +90,27 @@ class RecommendationBlocksQueryRepositoryTest {
                 insert into author_catalog_snapshot (author_id, display_name, status, created_at, updated_at)
                 values ('author-deleted', 'Deleted Author', 'DELETED', current_timestamp, current_timestamp)
                 """);
+        jdbcTemplate.update("""
+                insert into author_catalog_snapshot (author_id, display_name, status, created_at, updated_at)
+                values ('author-trend', 'Trend Author', 'ACTIVE', current_timestamp, current_timestamp)
+                """);
         insertPodcast("podcast-author-similar", "author-similar", "category-a", "PUBLISHED", "java", 1600);
         insertPodcast("podcast-author-deleted", "author-deleted", "category-a", "PUBLISHED", "java", 1600);
+        insertPodcast("podcast-author-trend", "author-trend", "category-z", "PUBLISHED", "science", 1600);
         jdbcTemplate.update("""
                 insert into author_daily_stats (author_id, stat_date, podcast_count, play_count, completion_count, follower_count, followed_count, unfollowed_count, like_count, dislike_count, play_finished_count, rating_count, rating_sum, created_at, updated_at)
                 values ('author-similar', date '2026-06-02', 1, 10, 0, 0, 1, 0, 2, 0, 1, 0, 0, current_timestamp, current_timestamp)
+                """);
+        jdbcTemplate.update("""
+                insert into author_daily_stats (author_id, stat_date, podcast_count, play_count, completion_count, follower_count, followed_count, unfollowed_count, like_count, dislike_count, play_finished_count, rating_count, rating_sum, created_at, updated_at)
+                values ('author-trend', date '2026-06-02', 1, 10, 0, 0, 0, 0, 0, 0, 1, 0, 0, current_timestamp, current_timestamp)
                 """);
     }
 
     @Test
     void similarPodcastsExcludeSourceAndUnpublishedItems() {
         List<SimilarPodcastCandidate> candidates = repository.findSimilarPodcastCandidates(
-                "podcast-source",
+                new SimilarPodcastSource("podcast-source", "author-source", "category-a", "java", 1800),
                 LocalDate.parse("2026-05-27"),
                 LocalDate.parse("2026-06-02"),
                 10
@@ -96,7 +118,7 @@ class RecommendationBlocksQueryRepositoryTest {
 
         assertThat(candidates).extracting(SimilarPodcastCandidate::podcastId)
                 .contains("podcast-same")
-                .doesNotContain("podcast-source", "podcast-deleted", "podcast-draft");
+                .doesNotContain("podcast-source", "podcast-deleted", "podcast-draft", "podcast-unrelated");
     }
 
     @Test
@@ -123,7 +145,7 @@ class RecommendationBlocksQueryRepositoryTest {
         );
 
         assertThat(candidates).extracting(SimilarAuthorCandidate::authorId)
-                .contains("author-similar")
+                .contains("author-similar", "author-trend")
                 .doesNotContain("author-source", "author-deleted");
     }
 

@@ -30,7 +30,8 @@ public class PodcastContentEventConsumer {
 
     @KafkaListener(
             topics = "${app.kafka.topics.podcast-content-events}",
-            groupId = "${spring.kafka.consumer.group-id}"
+            groupId = "${spring.kafka.consumer.group-id}",
+            concurrency = "${app.kafka.consumer.concurrency:1}"
     )
     public void onMessage(ConsumerRecord<String, String> record, Acknowledgment acknowledgment) {
         try {

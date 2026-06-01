@@ -9,8 +9,9 @@ import java.util.UUID;
 public record PodcastLikedPayload(
         @NotNull UUID podcastId,
         @NotNull UUID userId,
-        @NotNull Instant likedAt,
         UUID authorId,
-        UUID categoryId
+        UUID categoryId,
+        Instant occurredAt,
+        Instant likedAt
 ) {
 }

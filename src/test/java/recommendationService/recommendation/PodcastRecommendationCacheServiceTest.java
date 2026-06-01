@@ -41,7 +41,7 @@ class PodcastRecommendationCacheServiceTest {
     void cacheHitReturnsCachedRecommendationsWithoutScoring() {
         List<PodcastRecommendationResponse> cached = List.of(response("podcast-cache", 1));
         when(scoringService.normalizeLimit(20)).thenReturn(20);
-        when(cacheRepository.findPersonalPodcasts(eq("user-1"), anyString(), eq(CLOCK.instant()), eq(20)))
+        when(cacheRepository.findPersonalPodcasts(eq("user-1"), anyString(), eq(CLOCK.instant()), eq(20), eq(true)))
                 .thenReturn(cached);
 
         List<PodcastRecommendationResponse> response = service.recommendPodcasts("user-1", 20, null, true);

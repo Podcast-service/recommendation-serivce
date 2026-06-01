@@ -9,6 +9,7 @@ import java.util.UUID;
 public record AuthorFollowedPayload(
         @NotNull UUID authorId,
         @NotNull UUID userId,
-        @NotNull Instant followedAt
+        Instant occurredAt,
+        Instant followedAt
 ) {
 }

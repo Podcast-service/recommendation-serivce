@@ -8,6 +8,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import java.util.stream.Stream;
+import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -35,6 +38,23 @@ class RecommendationEventMapperTest {
 
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
     private final RecommendationEventMapper mapper = new RecommendationEventMapper(new ObjectMapper(), validator);
+
+    @Test
+    void readsPodcastCoreContractSnapshots() throws IOException {
+        for (String resource : new String[]{
+                "podcast.published.v1.json",
+                "podcast.play_finished.v1.json",
+                "podcast.liked.v1.json",
+                "playlist.updated.v1.json"
+        }) {
+            try (var stream = getClass().getResourceAsStream("/recommendation-events/" + resource)) {
+                assertThat(stream).as(resource).isNotNull();
+                assertThat(mapper.read(new String(stream.readAllBytes(), StandardCharsets.UTF_8)).knownEventType())
+                        .as(resource)
+                        .isTrue();
+            }
+        }
+    }
 
     @ParameterizedTest
     @MethodSource("jsonContracts")
@@ -260,6 +280,19 @@ class RecommendationEventMapperTest {
                                 }
                                 """.formatted(AUTHOR_ID, CATEGORY_ID, OCCURRED_AT)),
                         "payload is invalid"
+                ),
+                Arguments.of(
+                        envelope("podcast.published.v1", """
+                                {
+                                  "podcastId": "%s",
+                                  "authorId": "%s",
+                                  "categoryId": "%s",
+                                  "title": "Podcast title",
+                                  "publishedAt": "%s"
+                                }
+                                """.formatted(PODCAST_ID, AUTHOR_ID, CATEGORY_ID, OCCURRED_AT))
+                                .replace("\"eventVersion\": 1", "\"eventVersion\": 2"),
+                        "Unsupported recommendation event version"
                 )
         );
     }

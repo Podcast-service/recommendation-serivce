@@ -1,6 +1,7 @@
 package recommendationService.recommendation;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,6 +34,7 @@ public class CacheCleanupJob {
     @Scheduled(fixedDelayString = "${app.jobs.cache-cleanup-fixed-delay-ms:3600000}")
     public void cleanupExpiredCache() {
         Instant startedAt = Instant.now();
+        log.info("recommendation_cache_cleanup_job_started");
         int deleted = 0;
         int errors = 0;
         try {
@@ -42,9 +44,11 @@ public class CacheCleanupJob {
             errors++;
             log.warn("recommendation_cache_cleanup_job_failed", exception);
         }
+        Duration duration = Duration.between(startedAt, Instant.now());
+        Timer.builder("recommendation.jobs.duration").tag("job", "cache-cleanup").register(meterRegistry).record(duration);
         log.info(
                 "recommendation_cache_cleanup_job_finished durationMs={} processedUsers={} processedItems={} errors={}",
-                Duration.between(startedAt, Instant.now()).toMillis(),
+                duration.toMillis(),
                 0,
                 deleted,
                 errors
