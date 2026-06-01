@@ -21,7 +21,7 @@ spring:
   kafka:
     bootstrap-servers: ${RECOMMENDATION_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:
-      ack-mode: record
+      ack-mode: manual_immediate
     consumer:
       group-id: ${RECOMMENDATION_KAFKA_CONSUMER_GROUP:recommendation-service}
       enable-auto-commit: false
@@ -58,8 +58,23 @@ springdoc:
     tryItOutEnabled: true
 
 app:
+  kafka:
+    topics:
+      podcast-content-events: ${RECOMMENDATION_KAFKA_TOPIC_PODCAST_CONTENT_EVENTS:podcast.content.events.v1}
+      podcast-activity-events: ${RECOMMENDATION_KAFKA_TOPIC_PODCAST_ACTIVITY_EVENTS:podcast.activity.events.v1}
   features:
     kafka-consumers-enabled: ${RECOMMENDATION_KAFKA_CONSUMERS_ENABLED:false}
+    trends-api-enabled: ${RECOMMENDATION_TRENDS_API_ENABLED:true}
+    personal-podcasts-api-enabled: ${RECOMMENDATION_PERSONAL_PODCASTS_API_ENABLED:true}
+    recommendation-blocks-api-enabled: ${RECOMMENDATION_BLOCKS_API_ENABLED:true}
     refresh-job-enabled: ${RECOMMENDATION_REFRESH_JOB_ENABLED:false}
     global-job-enabled: ${RECOMMENDATION_GLOBAL_JOB_ENABLED:false}
     cache-cleanup-enabled: ${RECOMMENDATION_CACHE_CLEANUP_ENABLED:false}
+  recommendation-cache:
+    personal-ttl: ${RECOMMENDATION_PERSONAL_CACHE_TTL:PT30M}
+    global-ttl: ${RECOMMENDATION_GLOBAL_CACHE_TTL:PT10M}
+    refresh-user-limit: ${RECOMMENDATION_REFRESH_USER_LIMIT:100}
+  jobs:
+    recommendation-refresh-fixed-delay-ms: ${RECOMMENDATION_REFRESH_JOB_FIXED_DELAY_MS:1200000}
+    global-recommendations-fixed-delay-ms: ${RECOMMENDATION_GLOBAL_JOB_FIXED_DELAY_MS:600000}
+    cache-cleanup-fixed-delay-ms: ${RECOMMENDATION_CACHE_CLEANUP_FIXED_DELAY_MS:3600000}
