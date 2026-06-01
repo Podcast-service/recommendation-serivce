@@ -10,11 +10,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import recommendationService.catalog.PodcastCatalogSnapshotEntity;
+import recommendationService.catalog.PodcastCatalogSnapshotRepository;
 import recommendationService.events.DomainEventEnvelope;
 import recommendationService.events.ParsedDomainEvent;
-import recommendationService.events.ProcessedEventEntity;
-import recommendationService.events.ProcessedEventRepository;
+import recommendationService.events.ProcessedEventWriter;
 import recommendationService.events.RecommendationEventMapper;
+import recommendationService.events.RecommendationEventDeserializationException;
 import recommendationService.events.RecommendationEventType;
 import recommendationService.events.payload.AuthorFollowedPayload;
 import recommendationService.events.payload.AuthorUnfollowedPayload;
@@ -51,7 +53,8 @@ public class PodcastActivityEventService {
     );
 
     private final RecommendationEventMapper eventMapper;
-    private final ProcessedEventRepository processedEventRepository;
+    private final ProcessedEventWriter processedEventWriter;
+    private final PodcastCatalogSnapshotRepository podcastCatalogSnapshotRepository;
     private final UserPodcastInteractionRepository interactionRepository;
     private final UserCategoryInterestRepository categoryInterestRepository;
     private final UserAuthorInterestRepository authorInterestRepository;
@@ -61,7 +64,8 @@ public class PodcastActivityEventService {
 
     public PodcastActivityEventService(
             RecommendationEventMapper eventMapper,
-            ProcessedEventRepository processedEventRepository,
+            ProcessedEventWriter processedEventWriter,
+            PodcastCatalogSnapshotRepository podcastCatalogSnapshotRepository,
             UserPodcastInteractionRepository interactionRepository,
             UserCategoryInterestRepository categoryInterestRepository,
             UserAuthorInterestRepository authorInterestRepository,
@@ -70,7 +74,8 @@ public class PodcastActivityEventService {
             MeterRegistry meterRegistry
     ) {
         this.eventMapper = eventMapper;
-        this.processedEventRepository = processedEventRepository;
+        this.processedEventWriter = processedEventWriter;
+        this.podcastCatalogSnapshotRepository = podcastCatalogSnapshotRepository;
         this.interactionRepository = interactionRepository;
         this.categoryInterestRepository = categoryInterestRepository;
         this.authorInterestRepository = authorInterestRepository;
@@ -85,20 +90,28 @@ public class PodcastActivityEventService {
         DomainEventEnvelope<?> envelope = parsedEvent.envelope();
         String eventId = envelope.eventId().toString();
 
-        if (processedEventRepository.existsById(eventId)) {
+        if (processedEventWriter.insertIfAbsent(
+                eventId,
+                envelope.eventType(),
+                envelope.eventVersion(),
+                Instant.now()
+        ) == 0) {
             meterRegistry.counter("recommendation.events.duplicates").increment();
             log.info("recommendation_activity_event_duplicate eventId={} eventType={}", eventId, envelope.eventType());
             return ActivityEventHandlingResult.DUPLICATE;
         }
 
-        if (!parsedEvent.knownEventType() || !ACTIVITY_EVENT_TYPES.contains(parsedEvent.eventType())) {
-            saveProcessedEvent(envelope);
+        if (!parsedEvent.knownEventType()) {
             log.info("recommendation_activity_event_ignored eventId={} eventType={}", eventId, envelope.eventType());
             return ActivityEventHandlingResult.IGNORED;
         }
+        if (!ACTIVITY_EVENT_TYPES.contains(parsedEvent.eventType())) {
+            throw new RecommendationEventDeserializationException(
+                    "Recommendation event is routed to the wrong activity topic: " + envelope.eventType()
+            );
+        }
 
         applyActivityEvent(parsedEvent.eventType(), envelope);
-        saveProcessedEvent(envelope);
         meterRegistry.counter("recommendation.events.processed").increment();
         log.info("recommendation_activity_event_processed eventId={} eventType={}", eventId, envelope.eventType());
         return ActivityEventHandlingResult.PROCESSED;
@@ -116,61 +129,64 @@ public class PodcastActivityEventService {
     }
 
     private void handlePlayFinished(PodcastPlayFinishedPayload payload, Instant eventTime) {
+        PodcastMetadata metadata = enrich(payload.podcastId().toString(), payload.authorId(), payload.categoryId());
         UserPodcastInteractionEntity interaction = interaction(payload.userId().toString(), payload.podcastId().toString(), eventTime);
         interaction.incrementPlayFinishedCount();
         interaction.updateMaxProgressPercent(payload.progressPercent());
         interaction.touch(eventTime);
         interactionRepository.save(interaction);
 
-        applyCategoryInterest(payload.userId().toString(), payload.categoryId(), PLAY_FINISHED_CATEGORY_WEIGHT, eventTime);
-        applyAuthorInterest(payload.userId().toString(), payload.authorId(), PLAY_FINISHED_AUTHOR_WEIGHT, eventTime);
+        applyCategoryInterest(payload.userId().toString(), metadata.categoryId(), PLAY_FINISHED_CATEGORY_WEIGHT, eventTime);
+        applyAuthorInterest(payload.userId().toString(), metadata.authorId(), PLAY_FINISHED_AUTHOR_WEIGHT, eventTime);
         PodcastDailyStatsEntity podcastStats = podcastStats(payload.podcastId().toString(), eventTime);
         podcastStats.incrementPlayFinished(eventTime);
         podcastDailyStatsRepository.save(podcastStats);
-        if (payload.authorId() == null) {
+        if (metadata.authorId() == null) {
             warnMissing("authorId", RecommendationEventType.PODCAST_PLAY_FINISHED.value(), payload.podcastId().toString());
         } else {
-            AuthorDailyStatsEntity authorStats = authorStats(payload.authorId().toString(), eventTime);
+            AuthorDailyStatsEntity authorStats = authorStats(metadata.authorId().toString(), eventTime);
             authorStats.incrementPlayFinished(eventTime);
             authorDailyStatsRepository.save(authorStats);
         }
     }
 
     private void handleLiked(PodcastLikedPayload payload, Instant eventTime) {
+        PodcastMetadata metadata = enrich(payload.podcastId().toString(), payload.authorId(), payload.categoryId());
         UserPodcastInteractionEntity interaction = interaction(payload.userId().toString(), payload.podcastId().toString(), eventTime);
         interaction.markLiked();
         interaction.touch(eventTime);
         interactionRepository.save(interaction);
 
-        applyCategoryInterest(payload.userId().toString(), payload.categoryId(), LIKED_CATEGORY_WEIGHT, eventTime);
-        applyAuthorInterest(payload.userId().toString(), payload.authorId(), LIKED_AUTHOR_WEIGHT, eventTime);
+        applyCategoryInterest(payload.userId().toString(), metadata.categoryId(), LIKED_CATEGORY_WEIGHT, eventTime);
+        applyAuthorInterest(payload.userId().toString(), metadata.authorId(), LIKED_AUTHOR_WEIGHT, eventTime);
         PodcastDailyStatsEntity podcastStats = podcastStats(payload.podcastId().toString(), eventTime);
         podcastStats.incrementLike(eventTime);
         podcastDailyStatsRepository.save(podcastStats);
-        if (payload.authorId() == null) {
+        if (metadata.authorId() == null) {
             warnMissing("authorId", RecommendationEventType.PODCAST_LIKED.value(), payload.podcastId().toString());
         } else {
-            AuthorDailyStatsEntity authorStats = authorStats(payload.authorId().toString(), eventTime);
+            AuthorDailyStatsEntity authorStats = authorStats(metadata.authorId().toString(), eventTime);
             authorStats.incrementLike(eventTime);
             authorDailyStatsRepository.save(authorStats);
         }
     }
 
     private void handleDisliked(PodcastDislikedPayload payload, Instant eventTime) {
+        PodcastMetadata metadata = enrich(payload.podcastId().toString(), payload.authorId(), payload.categoryId());
         UserPodcastInteractionEntity interaction = interaction(payload.userId().toString(), payload.podcastId().toString(), eventTime);
         interaction.markDisliked();
         interaction.touch(eventTime);
         interactionRepository.save(interaction);
 
-        applyCategoryInterest(payload.userId().toString(), payload.categoryId(), DISLIKED_CATEGORY_WEIGHT, eventTime);
-        applyAuthorInterest(payload.userId().toString(), payload.authorId(), DISLIKED_AUTHOR_WEIGHT, eventTime);
+        applyCategoryInterest(payload.userId().toString(), metadata.categoryId(), DISLIKED_CATEGORY_WEIGHT, eventTime);
+        applyAuthorInterest(payload.userId().toString(), metadata.authorId(), DISLIKED_AUTHOR_WEIGHT, eventTime);
         PodcastDailyStatsEntity podcastStats = podcastStats(payload.podcastId().toString(), eventTime);
         podcastStats.incrementDislike(eventTime);
         podcastDailyStatsRepository.save(podcastStats);
-        if (payload.authorId() == null) {
+        if (metadata.authorId() == null) {
             warnMissing("authorId", RecommendationEventType.PODCAST_DISLIKED.value(), payload.podcastId().toString());
         } else {
-            AuthorDailyStatsEntity authorStats = authorStats(payload.authorId().toString(), eventTime);
+            AuthorDailyStatsEntity authorStats = authorStats(metadata.authorId().toString(), eventTime);
             authorStats.incrementDislike(eventTime);
             authorDailyStatsRepository.save(authorStats);
         }
@@ -240,16 +256,25 @@ public class PodcastActivityEventService {
         return eventTime.atZone(ZoneOffset.UTC).toLocalDate();
     }
 
-    private void saveProcessedEvent(DomainEventEnvelope<?> envelope) {
-        processedEventRepository.save(new ProcessedEventEntity(
-                envelope.eventId().toString(),
-                envelope.eventType(),
-                envelope.eventVersion(),
-                Instant.now()
-        ));
+    private PodcastMetadata enrich(String podcastId, java.util.UUID authorId, java.util.UUID categoryId) {
+        if (authorId != null && categoryId != null) {
+            return new PodcastMetadata(authorId, categoryId);
+        }
+        PodcastCatalogSnapshotEntity snapshot = podcastCatalogSnapshotRepository.findById(podcastId).orElse(null);
+        return new PodcastMetadata(
+                authorId != null ? authorId : uuidOrNull(snapshot == null ? null : snapshot.getAuthorId()),
+                categoryId != null ? categoryId : uuidOrNull(snapshot == null ? null : snapshot.getCategoryId())
+        );
+    }
+
+    private java.util.UUID uuidOrNull(String value) {
+        return value == null || value.isBlank() ? null : java.util.UUID.fromString(value);
     }
 
     private void warnMissing(String field, String eventType, String aggregateId) {
         log.warn("recommendation_activity_event_missing_optional field={} eventType={} aggregateId={}", field, eventType, aggregateId);
+    }
+
+    private record PodcastMetadata(java.util.UUID authorId, java.util.UUID categoryId) {
     }
 }

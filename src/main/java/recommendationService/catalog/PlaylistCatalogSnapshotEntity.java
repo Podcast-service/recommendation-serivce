@@ -20,6 +20,9 @@ public class PlaylistCatalogSnapshotEntity {
     @Column(name = "title", nullable = false, length = 512)
     private String title;
 
+    @Column(name = "description")
+    private String description;
+
     @Column(name = "visibility", nullable = false, length = 64)
     private String visibility;
 
@@ -64,6 +67,10 @@ public class PlaylistCatalogSnapshotEntity {
         this.title = title;
     }
 
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
     public String getVisibility() {
         return visibility;
     }
@@ -82,6 +89,10 @@ public class PlaylistCatalogSnapshotEntity {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 
     public void setUpdatedAt(Instant updatedAt) {

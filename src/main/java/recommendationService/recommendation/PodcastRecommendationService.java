@@ -53,7 +53,8 @@ public class PodcastRecommendationService {
                 userId,
                 requestKey,
                 now,
-                normalizedLimit
+                normalizedLimit,
+                shouldExcludeSeen
         );
         if (!cached.isEmpty()) {
             meterRegistry.counter("recommendation.cache.hit").increment();
@@ -62,9 +63,11 @@ public class PodcastRecommendationService {
 
         if (!scoringService.hasPositiveProfile(userId)) {
             List<PodcastRecommendationResponse> globalCached = cacheRepository.findGlobalPodcasts(
+                    userId,
                     requestKey(normalizedLimit, categoryId, true),
                     now,
-                    normalizedLimit
+                    normalizedLimit,
+                    shouldExcludeSeen
             );
             if (!globalCached.isEmpty()) {
                 meterRegistry.counter("recommendation.cache.hit").increment();

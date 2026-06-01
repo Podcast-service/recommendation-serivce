@@ -2,6 +2,8 @@ package recommendationService.trends;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -15,6 +17,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/recommendation/v1/trends")
 @ConditionalOnProperty(prefix = "app.features", name = "trends-api-enabled", havingValue = "true", matchIfMissing = true)
 @Tag(name = "Trends")
+@ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Trend items returned"),
+        @ApiResponse(responseCode = "400", description = "Invalid period or limit"),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid JWT"),
+        @ApiResponse(responseCode = "403", description = "Access denied"),
+        @ApiResponse(responseCode = "500", description = "Unexpected server error")
+})
 public class TrendController {
 
     private final TrendService trendService;

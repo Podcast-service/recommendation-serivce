@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import recommendationService.recommendation.scoring.PlaylistRecommendationScorer;
+import recommendationService.recommendation.scoring.SimilarityScorer;
 
 class RecommendationBlocksServiceTest {
 
@@ -24,7 +26,9 @@ class RecommendationBlocksServiceTest {
     private final RecommendationBlocksService service = new RecommendationBlocksService(
             repository,
             podcastRecommendationService,
-            CLOCK
+            CLOCK,
+            new PlaylistRecommendationScorer(),
+            new SimilarityScorer()
     );
 
     @Test
@@ -100,16 +104,17 @@ class RecommendationBlocksServiceTest {
 
     @Test
     void similarPodcastsRespectCategoryAuthorTagsDuration() {
-        when(repository.findSimilarPodcastSource("podcast-source"))
-                .thenReturn(Optional.of(new SimilarPodcastSource(
-                        "podcast-source",
-                        "author-1",
-                        "category-1",
-                        "java,backend,architecture",
-                        1800
-                )));
-        when(repository.findSimilarPodcastCandidates(
+        SimilarPodcastSource source = new SimilarPodcastSource(
                 "podcast-source",
+                "author-1",
+                "category-1",
+                "java,backend,architecture",
+                1800
+        );
+        when(repository.findSimilarPodcastSource("podcast-source"))
+                .thenReturn(Optional.of(source));
+        when(repository.findSimilarPodcastCandidates(
+                source,
                 LocalDate.parse("2026-05-27"),
                 LocalDate.parse("2026-06-02"),
                 200

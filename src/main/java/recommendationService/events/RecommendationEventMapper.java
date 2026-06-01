@@ -32,7 +32,14 @@ public class RecommendationEventMapper {
         validateEnvelope(rawEnvelope);
 
         return RecommendationEventType.fromValue(rawEnvelope.eventType())
-                .map(type -> ParsedDomainEvent.known(type, mapKnownPayload(rawEnvelope, type)))
+                .map(type -> {
+                    if (rawEnvelope.eventVersion() != 1) {
+                        throw new RecommendationEventDeserializationException(
+                                "Unsupported recommendation event version: " + rawEnvelope.eventVersion()
+                        );
+                    }
+                    return ParsedDomainEvent.known(type, mapKnownPayload(rawEnvelope, type));
+                })
                 .orElseGet(() -> ParsedDomainEvent.unknown(rawEnvelope));
     }
 

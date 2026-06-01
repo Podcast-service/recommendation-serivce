@@ -9,6 +9,7 @@ import java.util.UUID;
 public record AuthorUnfollowedPayload(
         @NotNull UUID authorId,
         @NotNull UUID userId,
-        @NotNull Instant unfollowedAt
+        Instant occurredAt,
+        Instant unfollowedAt
 ) {
 }

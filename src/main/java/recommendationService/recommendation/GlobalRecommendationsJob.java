@@ -1,5 +1,7 @@
 package recommendationService.recommendation;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import java.time.Instant;
 import org.slf4j.Logger;
@@ -15,14 +17,17 @@ public class GlobalRecommendationsJob {
     private static final Logger log = LoggerFactory.getLogger(GlobalRecommendationsJob.class);
 
     private final PodcastRecommendationService recommendationService;
+    private final MeterRegistry meterRegistry;
 
-    public GlobalRecommendationsJob(PodcastRecommendationService recommendationService) {
+    public GlobalRecommendationsJob(PodcastRecommendationService recommendationService, MeterRegistry meterRegistry) {
         this.recommendationService = recommendationService;
+        this.meterRegistry = meterRegistry;
     }
 
     @Scheduled(fixedDelayString = "${app.jobs.global-recommendations-fixed-delay-ms:600000}")
     public void refreshGlobalRecommendations() {
         Instant startedAt = Instant.now();
+        log.info("global_recommendations_job_started");
         int processedItems = 0;
         int errors = 0;
         try {
@@ -33,9 +38,11 @@ public class GlobalRecommendationsJob {
             errors++;
             log.warn("global_recommendations_job_failed", exception);
         }
+        Duration duration = Duration.between(startedAt, Instant.now());
+        Timer.builder("recommendation.jobs.duration").tag("job", "global-refresh").register(meterRegistry).record(duration);
         log.info(
                 "global_recommendations_job_finished durationMs={} processedUsers={} processedItems={} errors={}",
-                Duration.between(startedAt, Instant.now()).toMillis(),
+                duration.toMillis(),
                 0,
                 processedItems,
                 errors

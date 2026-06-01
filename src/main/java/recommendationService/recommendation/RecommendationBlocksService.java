@@ -7,14 +7,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.springframework.stereotype.Service;
+import recommendationService.recommendation.scoring.PlaylistRecommendationScorer;
+import recommendationService.recommendation.scoring.SimilarityScorer;
 
 @Service
 public class RecommendationBlocksService {
@@ -26,15 +25,21 @@ public class RecommendationBlocksService {
     private final RecommendationBlocksQueryRepository repository;
     private final PodcastRecommendationService podcastRecommendationService;
     private final Clock clock;
+    private final PlaylistRecommendationScorer playlistScorer;
+    private final SimilarityScorer similarityScorer;
 
     public RecommendationBlocksService(
             RecommendationBlocksQueryRepository repository,
             PodcastRecommendationService podcastRecommendationService,
-            Clock clock
+            Clock clock,
+            PlaylistRecommendationScorer playlistScorer,
+            SimilarityScorer similarityScorer
     ) {
         this.repository = repository;
         this.podcastRecommendationService = podcastRecommendationService;
         this.clock = clock;
+        this.playlistScorer = playlistScorer;
+        this.similarityScorer = similarityScorer;
     }
 
     public List<RecommendationItemResponse> feed(String userId, Integer limit) {
@@ -102,13 +107,14 @@ public class RecommendationBlocksService {
         }
         LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
         List<SimilarPodcastCandidate> candidates = repository.findSimilarPodcastCandidates(
-                podcastId,
+                source,
                 today.minusDays(6),
                 today,
                 normalizedLimit * CANDIDATE_MULTIPLIER
         );
         BigDecimal maxPopularity = max(candidates.stream().map(SimilarPodcastCandidate::popularityScore).toList());
         List<RecommendationItemResponse> scored = candidates.stream()
+                .filter(candidate -> isSimilarCandidate(source, candidate))
                 .map(candidate -> scoreSimilarPodcast(source, candidate, maxPopularity))
                 .filter(item -> item.score().compareTo(BigDecimal.ZERO) > 0)
                 .sorted(Comparator.comparing(RecommendationItemResponse::score).reversed()
@@ -154,16 +160,11 @@ public class RecommendationBlocksService {
         BigDecimal popularity = normalize(candidate.popularityScore(), maxPopularity);
         BigDecimal quality = clamp01(nullSafe(candidate.qualityScore()));
         BigDecimal freshness = freshnessScore(candidate.updatedAt());
-        BigDecimal score = category.multiply(new BigDecimal("0.35"))
-                .add(author.multiply(new BigDecimal("0.25")))
-                .add(popularity.multiply(new BigDecimal("0.20")))
-                .add(quality.multiply(new BigDecimal("0.10")))
-                .add(freshness.multiply(new BigDecimal("0.10")));
         return new RecommendationItemResponse(
                 "PLAYLIST",
                 candidate.playlistId(),
                 0,
-                toPercent(score),
+                playlistScorer.score(category, author, popularity, quality, freshness),
                 playlistReasonCode(category, author, popularity, quality, freshness),
                 playlistReasonText(category, author, popularity, quality, freshness),
                 Map.of(
@@ -181,19 +182,14 @@ public class RecommendationBlocksService {
     ) {
         BigDecimal sameCategory = equalsNullable(source.categoryId(), candidate.categoryId()) ? BigDecimal.ONE : BigDecimal.ZERO;
         BigDecimal sameAuthor = equalsNullable(source.authorId(), candidate.authorId()) ? BigDecimal.ONE : BigDecimal.ZERO;
-        BigDecimal tagsOverlap = tagsOverlap(source.tags(), candidate.tags());
-        BigDecimal similarDuration = durationSimilarity(source.durationSeconds(), candidate.durationSeconds());
+        BigDecimal tagsOverlap = similarityScorer.tagsOverlap(source.tags(), candidate.tags());
+        BigDecimal similarDuration = similarityScorer.durationSimilarity(source.durationSeconds(), candidate.durationSeconds());
         BigDecimal popularity = normalize(candidate.popularityScore(), maxPopularity);
-        BigDecimal score = sameCategory.multiply(new BigDecimal("0.40"))
-                .add(sameAuthor.multiply(new BigDecimal("0.25")))
-                .add(tagsOverlap.multiply(new BigDecimal("0.20")))
-                .add(similarDuration.multiply(new BigDecimal("0.10")))
-                .add(popularity.multiply(new BigDecimal("0.05")));
         return new RecommendationItemResponse(
                 "PODCAST",
                 candidate.podcastId(),
                 0,
-                toPercent(score),
+                similarityScorer.podcastScore(sameCategory, sameAuthor, tagsOverlap, similarDuration, popularity),
                 similarPodcastReasonCode(sameCategory, sameAuthor, tagsOverlap, similarDuration, popularity),
                 similarPodcastReasonText(sameCategory, sameAuthor, tagsOverlap, similarDuration, popularity),
                 Map.of(
@@ -214,14 +210,11 @@ public class RecommendationBlocksService {
         BigDecimal category = normalize(candidate.categoryScore(), maxCategory);
         BigDecimal audience = normalize(candidate.audienceScore(), maxAudience);
         BigDecimal trend = normalize(candidate.trendScore(), maxTrend);
-        BigDecimal score = category.multiply(new BigDecimal("0.60"))
-                .add(audience.multiply(new BigDecimal("0.25")))
-                .add(trend.multiply(new BigDecimal("0.15")));
         return new RecommendationItemResponse(
                 "AUTHOR",
                 candidate.authorId(),
                 0,
-                toPercent(score),
+                similarityScorer.authorScore(category, audience, trend),
                 similarAuthorReasonCode(category, audience, trend),
                 similarAuthorReasonText(category, audience, trend),
                 Map.of("displayName", value(candidate.displayName()))
@@ -283,35 +276,17 @@ public class RecommendationBlocksService {
         return BigDecimal.valueOf(30 - ageDays).divide(new BigDecimal("30"), 6, RoundingMode.HALF_UP);
     }
 
-    private BigDecimal tagsOverlap(String sourceTags, String candidateTags) {
-        Set<String> source = parseTags(sourceTags);
-        Set<String> candidate = parseTags(candidateTags);
-        if (source.isEmpty() || candidate.isEmpty()) {
-            return BigDecimal.ZERO;
-        }
-        long intersection = candidate.stream().filter(source::contains).count();
-        long union = java.util.stream.Stream.concat(source.stream(), candidate.stream()).distinct().count();
-        return BigDecimal.valueOf(intersection).divide(BigDecimal.valueOf(union), 6, RoundingMode.HALF_UP);
-    }
-
-    private Set<String> parseTags(String tags) {
-        if (tags == null || tags.isBlank()) {
-            return Set.of();
-        }
-        return Arrays.stream(tags.split(","))
-                .map(String::trim)
-                .filter(tag -> !tag.isBlank())
-                .map(String::toLowerCase)
-                .collect(Collectors.toSet());
-    }
-
-    private BigDecimal durationSimilarity(Integer sourceDuration, Integer candidateDuration) {
-        if (sourceDuration == null || candidateDuration == null || sourceDuration <= 0 || candidateDuration <= 0) {
-            return BigDecimal.ZERO;
-        }
-        int max = Math.max(sourceDuration, candidateDuration);
-        int diff = Math.abs(sourceDuration - candidateDuration);
-        return clamp01(BigDecimal.ONE.subtract(BigDecimal.valueOf(diff).divide(BigDecimal.valueOf(max), 6, RoundingMode.HALF_UP)));
+    private boolean isSimilarCandidate(SimilarPodcastSource source, SimilarPodcastCandidate candidate) {
+        return similarityScorer.podcastCandidate(
+                source.authorId(),
+                source.categoryId(),
+                source.tags(),
+                source.durationSeconds(),
+                candidate.authorId(),
+                candidate.categoryId(),
+                candidate.tags(),
+                candidate.durationSeconds()
+        );
     }
 
     private BigDecimal nullSafe(BigDecimal value) {
@@ -326,10 +301,6 @@ public class RecommendationBlocksService {
             return BigDecimal.ONE;
         }
         return value;
-    }
-
-    private BigDecimal toPercent(BigDecimal score) {
-        return clamp01(score).multiply(new BigDecimal("100")).setScale(4, RoundingMode.HALF_UP);
     }
 
     private boolean equalsNullable(String left, String right) {

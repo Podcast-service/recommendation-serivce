@@ -34,6 +34,10 @@ class PodcastRecommendationCacheRepositoryTest {
         repository = new PodcastRecommendationCacheRepository(jdbcTemplate, objectMapper);
         jdbcTemplate.update("delete from recommendation_cache");
         jdbcTemplate.update("delete from global_recommendation_cache");
+        jdbcTemplate.update("delete from user_podcast_interaction");
+        jdbcTemplate.update("delete from podcast_catalog_snapshot");
+        insertPublishedPodcast("podcast-1");
+        insertPublishedPodcast("podcast-2");
     }
 
     @Test
@@ -55,7 +59,8 @@ class PodcastRecommendationCacheRepositoryTest {
                 "user-1",
                 "podcasts:v1:test",
                 NOW,
-                20
+                20,
+                true
         );
 
         assertThat(cached).extracting(PodcastRecommendationResponse::itemId)
@@ -74,7 +79,8 @@ class PodcastRecommendationCacheRepositoryTest {
                 "user-1",
                 "podcasts:v1:expired",
                 NOW,
-                20
+                20,
+                true
         );
 
         assertThat(cached).isEmpty();
@@ -97,6 +103,38 @@ class PodcastRecommendationCacheRepositoryTest {
         Integer globalCount = jdbcTemplate.queryForObject("select count(*) from global_recommendation_cache", Integer.class);
         assertThat(personalCount).isZero();
         assertThat(globalCount).isEqualTo(1);
+    }
+
+    @Test
+    void cachedDislikedPodcastIsIgnored() {
+        repository.replacePersonalPodcasts(
+                "user-1",
+                "podcasts:v1:test",
+                List.of(response("podcast-1", 1)),
+                NOW,
+                NOW.plusSeconds(600)
+        );
+        jdbcTemplate.update("""
+                insert into user_podcast_interaction (
+                    interaction_id, user_id, podcast_id, interaction_type, occurred_at, created_at, disliked
+                ) values ('user-1:podcast-1', 'user-1', 'podcast-1', 'DISLIKED', current_timestamp, current_timestamp, true)
+                """);
+
+        assertThat(repository.findPersonalPodcasts("user-1", "podcasts:v1:test", NOW, 20, true)).isEmpty();
+    }
+
+    @Test
+    void cachedDeletedPodcastIsIgnored() {
+        repository.replacePersonalPodcasts(
+                "user-1",
+                "podcasts:v1:test",
+                List.of(response("podcast-1", 1)),
+                NOW,
+                NOW.plusSeconds(600)
+        );
+        jdbcTemplate.update("update podcast_catalog_snapshot set status = 'DELETED' where podcast_id = 'podcast-1'");
+
+        assertThat(repository.findPersonalPodcasts("user-1", "podcasts:v1:test", NOW, 20, true)).isEmpty();
     }
 
     private void insertExpiredPersonalCache(String userId, String cacheKey) {
@@ -131,6 +169,13 @@ class PodcastRecommendationCacheRepositoryTest {
                 "POPULAR_NOW",
                 "expired"
         );
+    }
+
+    private void insertPublishedPodcast(String podcastId) {
+        jdbcTemplate.update("""
+                insert into podcast_catalog_snapshot (podcast_id, title, status, created_at, updated_at)
+                values (?, ?, 'PUBLISHED', current_timestamp, current_timestamp)
+                """, podcastId, "Podcast " + podcastId);
     }
 
     private PodcastRecommendationResponse response(String itemId, int rank) {

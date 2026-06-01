@@ -23,6 +23,21 @@ public class PodcastCatalogSnapshotEntity {
     @Column(name = "title", nullable = false, length = 512)
     private String title;
 
+    @Column(name = "description")
+    private String description;
+
+    @Column(name = "duration_seconds")
+    private Integer durationSeconds;
+
+    @Column(name = "language", length = 32)
+    private String language;
+
+    @Column(name = "tags")
+    private String tags;
+
+    @Column(name = "is_explicit")
+    private Boolean explicit;
+
     @Column(name = "status", nullable = false, length = 64)
     private String status;
 
@@ -72,6 +87,26 @@ public class PodcastCatalogSnapshotEntity {
 
     public void setTitle(String title) {
         this.title = title;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public void setDurationSeconds(Long durationSeconds) {
+        this.durationSeconds = durationSeconds == null ? null : Math.toIntExact(durationSeconds);
+    }
+
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
+    }
+
+    public void setExplicit(Boolean explicit) {
+        this.explicit = explicit;
     }
 
     public String getStatus() {

@@ -1,6 +1,7 @@
 package recommendationService.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -138,6 +139,57 @@ class PodcastContentEventServiceTest {
         PlaylistCatalogSnapshotEntity snapshot = playlistRepository.findById(PLAYLIST_ID).orElseThrow();
         assertThat(result).isEqualTo(ContentEventHandlingResult.PROCESSED);
         assertThat(snapshot.getStatus()).isEqualTo(CatalogSnapshotStatus.DELETED);
+    }
+
+    @Test
+    void failedTransactionRollsBackProcessedEventSoDeliveryCanBeRetried() {
+        String invalidEvent = envelope(EVENT_ID, "playlist.created.v1", """
+                {
+                  "playlistId": "%s",
+                  "ownerUserId": "%s",
+                  "title": "Invalid playlist",
+                  "publicPlaylist": true,
+                  "createdAt": "%s",
+                  "podcastIds": [null]
+                }
+                """.formatted(PLAYLIST_ID, USER_ID, OCCURRED_AT));
+
+        assertThatThrownBy(() -> service.handle(invalidEvent)).isInstanceOf(RuntimeException.class);
+        assertThat(processedEventRepository.existsById(EVENT_ID)).isFalse();
+
+        assertThat(service.handle(playlistCreated(EVENT_ID, "Retry playlist", true, false)))
+                .isEqualTo(ContentEventHandlingResult.PROCESSED);
+    }
+
+    @Test
+    void knownActivityEventOnContentTopicFailsWithoutMarkingProcessed() {
+        assertThatThrownBy(() -> service.handle(envelope(EVENT_ID, "podcast.liked.v1", """
+                {
+                  "podcastId": "%s",
+                  "userId": "%s"
+                }
+                """.formatted(PODCAST_ID, USER_ID))))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("wrong content topic");
+
+        assertThat(processedEventRepository.existsById(EVENT_ID)).isFalse();
+    }
+
+    @Test
+    void playlistVisibilityFieldIsAcceptedWithoutBooleanAlias() {
+        ContentEventHandlingResult result = service.handle(envelope(EVENT_ID, "playlist.created.v1", """
+                {
+                  "playlistId": "%s",
+                  "ownerUserId": "%s",
+                  "title": "Visible playlist",
+                  "visibility": "PUBLIC",
+                  "createdAt": "%s"
+                }
+                """.formatted(PLAYLIST_ID, USER_ID, OCCURRED_AT)));
+
+        assertThat(result).isEqualTo(ContentEventHandlingResult.PROCESSED);
+        assertThat(playlistRepository.findById(PLAYLIST_ID).orElseThrow().getVisibility())
+                .isEqualTo(CatalogVisibility.PUBLIC);
     }
 
     private String podcastPublished(String eventId, String title, String categoryId) {

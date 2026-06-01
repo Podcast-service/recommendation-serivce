@@ -12,9 +12,11 @@ import org.springframework.stereotype.Repository;
 public class TrendQueryRepository {
 
     private final JdbcTemplate jdbcTemplate;
+    private final TrendScoreCalculator scoreCalculator;
 
-    public TrendQueryRepository(JdbcTemplate jdbcTemplate) {
+    public TrendQueryRepository(JdbcTemplate jdbcTemplate, TrendScoreCalculator scoreCalculator) {
         this.jdbcTemplate = jdbcTemplate;
+        this.scoreCalculator = scoreCalculator;
     }
 
     public List<TrendRow> findPodcastTrends(
@@ -30,9 +32,10 @@ public class TrendQueryRepository {
                 ? new Object[]{Date.valueOf(startDate), Date.valueOf(endDate), limit}
                 : new Object[]{Date.valueOf(startDate), Date.valueOf(endDate), categoryId, limit};
 
-        return jdbcTemplate.query("""
+        String score = scoreCalculator.podcastSql("s");
+        String sql = """
                         select s.podcast_id as item_id,
-                               sum(s.play_count + s.play_finished_count * 2 + s.like_count * 3 - s.dislike_count) as score,
+                               sum(%s) as score,
                                p.title,
                                p.author_id,
                                p.category_id,
@@ -42,12 +45,13 @@ public class TrendQueryRepository {
                           join podcast_catalog_snapshot p on p.podcast_id = s.podcast_id
                          where s.stat_date between ? and ?
                            and p.status = 'PUBLISHED'
-                        """ + categoryFilter + """
+                        %s
                          group by s.podcast_id, p.title, p.author_id, p.category_id, p.status, p.published_at
-                        having sum(s.play_count + s.play_finished_count * 2 + s.like_count * 3 - s.dislike_count) > 0
+                        having sum(%s) > 0
                          order by score desc, s.podcast_id asc
                          limit ?
-                        """,
+                        """.formatted(score, categoryFilter, score);
+        return jdbcTemplate.query(sql,
                 args,
                 (rs, rowNum) -> new TrendRow(
                         rs.getString("item_id"),
@@ -65,19 +69,21 @@ public class TrendQueryRepository {
     }
 
     public List<TrendRow> findAuthorTrends(LocalDate startDate, LocalDate endDate, int limit) {
-        return jdbcTemplate.query("""
+        String score = scoreCalculator.authorSql("s");
+        String sql = """
                         select s.author_id as item_id,
-                               sum(s.play_count + s.play_finished_count * 2 + s.like_count * 3 + s.followed_count * 4 - s.unfollowed_count * 2 - s.dislike_count) as score,
+                               sum(%s) as score,
                                a.display_name,
                                a.status
                           from author_daily_stats s
                           left join author_catalog_snapshot a on a.author_id = s.author_id
                          where s.stat_date between ? and ?
                          group by s.author_id, a.display_name, a.status
-                        having sum(s.play_count + s.play_finished_count * 2 + s.like_count * 3 + s.followed_count * 4 - s.unfollowed_count * 2 - s.dislike_count) > 0
+                        having sum(%s) > 0
                          order by score desc, s.author_id asc
                          limit ?
-                        """,
+                        """.formatted(score, score);
+        return jdbcTemplate.query(sql,
                 (rs, rowNum) -> new TrendRow(
                         rs.getString("item_id"),
                         rs.getBigDecimal("score"),
@@ -95,22 +101,25 @@ public class TrendQueryRepository {
     }
 
     public List<TrendRow> findPlaylistTrends(LocalDate startDate, LocalDate endDate, int limit) {
-        return jdbcTemplate.query("""
+        String score = scoreCalculator.playlistSql("s");
+        String sql = """
                         select s.playlist_id as item_id,
-                               sum(s.view_count + s.play_count * 2 + s.follower_count * 3) as score,
+                               sum(%s) as score,
                                p.title,
                                p.owner_user_id,
                                p.visibility,
                                p.status
                           from playlist_daily_stats s
-                          left join playlist_catalog_snapshot p on p.playlist_id = s.playlist_id
+                          join playlist_catalog_snapshot p on p.playlist_id = s.playlist_id
                          where s.stat_date between ? and ?
-                           and (p.status is null or p.status <> 'DELETED')
+                           and p.status <> 'DELETED'
+                           and p.visibility = 'PUBLIC'
                          group by s.playlist_id, p.title, p.owner_user_id, p.visibility, p.status
-                        having sum(s.view_count + s.play_count * 2 + s.follower_count * 3) > 0
+                        having sum(%s) > 0
                          order by score desc, s.playlist_id asc
                          limit ?
-                        """,
+                        """.formatted(score, score);
+        return jdbcTemplate.query(sql,
                 (rs, rowNum) -> new TrendRow(
                         rs.getString("item_id"),
                         rs.getBigDecimal("score"),

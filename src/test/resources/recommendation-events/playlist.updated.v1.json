@@ -1,0 +1,20 @@
+{
+  "eventId": "01000000-0000-0000-0000-000000000004",
+  "eventType": "playlist.updated.v1",
+  "eventVersion": 1,
+  "producer": "podcast-core",
+  "occurredAt": "2026-06-01T10:15:30Z",
+  "correlationId": null,
+  "causationId": null,
+  "userId": "50000000-0000-0000-0000-000000000001",
+  "payload": {
+    "playlistId": "40000000-0000-0000-0000-000000000001",
+    "ownerUserId": "50000000-0000-0000-0000-000000000001",
+    "title": "Updated playlist title",
+    "description": "Playlist description",
+    "publicPlaylist": true,
+    "podcastIds": ["10000000-0000-0000-0000-000000000001"],
+    "createdAt": "2026-05-31T10:15:30Z",
+    "updatedAt": "2026-06-01T10:15:30Z"
+  }
+}

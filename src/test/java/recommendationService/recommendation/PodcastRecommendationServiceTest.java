@@ -13,13 +13,18 @@ import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import recommendationService.recommendation.scoring.PodcastRecommendationScorer;
 
 class PodcastRecommendationServiceTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-06-02T10:15:30Z"), ZoneOffset.UTC);
 
     private final PodcastRecommendationQueryRepository repository = Mockito.mock(PodcastRecommendationQueryRepository.class);
-    private final PodcastRecommendationScoringService service = new PodcastRecommendationScoringService(repository, CLOCK);
+    private final PodcastRecommendationScoringService service = new PodcastRecommendationScoringService(
+            repository,
+            CLOCK,
+            new PodcastRecommendationScorer()
+    );
 
     @Test
     void userWithCategoryInterestGetsRelevantPodcasts() {

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.springframework.stereotype.Service;
+import recommendationService.recommendation.scoring.PodcastRecommendationScorer;
 
 @Service
 public class PodcastRecommendationScoringService {
@@ -24,10 +25,16 @@ public class PodcastRecommendationScoringService {
 
     private final PodcastRecommendationQueryRepository repository;
     private final Clock clock;
+    private final PodcastRecommendationScorer scorer;
 
-    public PodcastRecommendationScoringService(PodcastRecommendationQueryRepository repository, Clock clock) {
+    public PodcastRecommendationScoringService(
+            PodcastRecommendationQueryRepository repository,
+            Clock clock,
+            PodcastRecommendationScorer scorer
+    ) {
         this.repository = repository;
         this.clock = clock;
+        this.scorer = scorer;
     }
 
     public List<PodcastRecommendationResponse> calculatePodcasts(
@@ -102,18 +109,17 @@ public class PodcastRecommendationScoringService {
         BigDecimal qualityScore = qualityScore(candidate);
         BigDecimal diversityScore = diversityScore(categoryScore, authorScore);
 
-        BigDecimal weighted = categoryScore.multiply(new BigDecimal("0.35"))
-                .add(authorScore.multiply(new BigDecimal("0.25")))
-                .add(popularityScore.multiply(new BigDecimal("0.20")))
-                .add(freshnessScore.multiply(new BigDecimal("0.10")))
-                .add(qualityScore.multiply(new BigDecimal("0.05")))
-                .add(diversityScore.multiply(new BigDecimal("0.05")));
-
-        BigDecimal alreadySeenPenalty = !excludeSeen && isSeen(candidate) ? new BigDecimal("0.25") : BigDecimal.ZERO;
-        BigDecimal dislikedPenalty = candidate.disliked() ? BigDecimal.ONE : BigDecimal.ZERO;
-        BigDecimal normalized = clamp01(weighted.subtract(alreadySeenPenalty).subtract(dislikedPenalty))
-                .multiply(new BigDecimal("100"))
-                .setScale(4, RoundingMode.HALF_UP);
+        BigDecimal normalized = scorer.score(
+                categoryScore,
+                authorScore,
+                popularityScore,
+                freshnessScore,
+                qualityScore,
+                diversityScore,
+                isSeen(candidate),
+                excludeSeen,
+                candidate.disliked()
+        );
 
         return new ScoredPodcastRecommendation(
                 candidate,

@@ -1,6 +1,7 @@
 package recommendationService.events.payload;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
@@ -12,8 +13,10 @@ public record PlaylistCreatedPayload(
         @NotNull UUID playlistId,
         @NotNull UUID ownerUserId,
         @NotBlank String title,
-        boolean publicPlaylist,
+        String description,
+        @JsonAlias("isPublic") boolean publicPlaylist,
+        List<UUID> podcastIds,
         @NotNull Instant createdAt,
-        List<UUID> podcastIds
+        String visibility
 ) {
 }
