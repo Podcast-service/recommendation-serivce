@@ -56,7 +56,7 @@ class PodcastContentEventServiceTest {
         assertThat(result).isEqualTo(ContentEventHandlingResult.PROCESSED);
         assertThat(snapshot).isPresent();
         assertThat(snapshot.get().getTitle()).isEqualTo("Initial title");
-        assertThat(snapshot.get().getStatus()).isEqualTo(CatalogSnapshotStatus.ACTIVE);
+        assertThat(snapshot.get().getStatus()).isEqualTo(CatalogSnapshotStatus.PUBLISHED);
         assertThat(processedEventRepository.existsById(EVENT_ID)).isTrue();
     }
 
@@ -70,7 +70,7 @@ class PodcastContentEventServiceTest {
         assertThat(result).isEqualTo(ContentEventHandlingResult.PROCESSED);
         assertThat(snapshot.getTitle()).isEqualTo("Updated title");
         assertThat(snapshot.getCategoryId()).isEqualTo(CATEGORY_ID_2);
-        assertThat(snapshot.getStatus()).isEqualTo(CatalogSnapshotStatus.ACTIVE);
+        assertThat(snapshot.getStatus()).isEqualTo(CatalogSnapshotStatus.PUBLISHED);
     }
 
     @Test
