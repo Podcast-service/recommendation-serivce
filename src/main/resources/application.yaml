@@ -21,7 +21,7 @@ spring:
   kafka:
     bootstrap-servers: ${RECOMMENDATION_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     listener:
-      ack-mode: record
+      ack-mode: manual_immediate
     consumer:
       group-id: ${RECOMMENDATION_KAFKA_CONSUMER_GROUP:recommendation-service}
       enable-auto-commit: false
@@ -58,6 +58,9 @@ springdoc:
     tryItOutEnabled: true
 
 app:
+  kafka:
+    topics:
+      podcast-content-events: ${RECOMMENDATION_KAFKA_TOPIC_PODCAST_CONTENT_EVENTS:podcast.content.events.v1}
   features:
     kafka-consumers-enabled: ${RECOMMENDATION_KAFKA_CONSUMERS_ENABLED:false}
     refresh-job-enabled: ${RECOMMENDATION_REFRESH_JOB_ENABLED:false}

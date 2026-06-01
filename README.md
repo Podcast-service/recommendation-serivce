@@ -64,7 +64,7 @@ http://localhost:8083/swagger
 - `RECOMMENDATION_GLOBAL_JOB_ENABLED=false`
 - `RECOMMENDATION_CACHE_CLEANUP_ENABLED=false`
 
-Текущее безопасное решение: Kafka infrastructure properties присутствуют для будущей интеграции, но `@KafkaListener` beans на этом этапе не объявлены. Будущие consumers должны обрабатывать только версионированные events и быть идемпотентными через `processed_events`.
+Текущее безопасное решение: Kafka consumer для content events объявлен, но не создаётся при дефолтном `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=false`. Consumers должны обрабатывать только версионированные events и быть идемпотентными через `processed_events`.
 
 ## Kafka Event Contracts
 
@@ -84,7 +84,13 @@ DTO для recommendation events совместимы с текущей реал
 
 `RecommendationEventMapper` читает общий `DomainEventEnvelope`, игнорирует неизвестные JSON-поля и мапит `payload` в DTO по `eventType`. Неизвестный `eventType` не считается ошибкой десериализации: mapper возвращает envelope с raw JSON payload, чтобы будущий consumer мог безопасно проигнорировать событие. Невалидный envelope или payload считаются нарушением контракта.
 
-Kafka listeners пока не включены, события не обрабатываются бизнес-логикой и не пишутся в БД.
+Kafka listener для `podcast.content.events.v1` включается только через `RECOMMENDATION_KAFKA_CONSUMERS_ENABLED=true`. Он обрабатывает `podcast.*` и `playlist.*` content events, обновляет catalog snapshots и сохраняет `eventId` в `processed_events` в одной транзакции. Неизвестные события ack-safe игнорируются и также помечаются как processed, чтобы повторная доставка не блокировала consumer.
+
+Метрики:
+
+- `recommendation.events.processed`
+- `recommendation.events.duplicates`
+- `recommendation.events.failed`
 
 ## Схема БД
 
