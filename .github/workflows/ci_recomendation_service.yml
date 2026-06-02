@@ -13,15 +13,40 @@ jobs:
     if: github.event.pull_request.merged == false
     runs-on: self-hosted
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $USER:$USER ${{ github.workspace }} || true
+
       - uses: actions/checkout@v4
-      - name: Build check
-        run: docker build -t ghcr.io/podcast-service/recommendation_service:pr-${{ github.event.pull_request.number }} .
+        with:
+          fetch-depth: 0
+
+      - name: Build and test with coverage
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/app \
+            -w /app \
+            gradle:8.14.3-jdk21-alpine \
+            gradle --no-daemon test jacocoTestReport
+
+      - name: Fix permissions after Docker
+        run: sudo chown -R $USER:$USER ${{ github.workspace }}
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@v6
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
   deploy:
     if: github.event.pull_request.merged == true
     runs-on: self-hosted
     steps:
+      - name: Fix workspace permissions
+        run: sudo chown -R $USER:$USER ${{ github.workspace }} || true
+
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set SHA tag
         id: vars
